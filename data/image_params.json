@@ -1,0 +1,15 @@
+{
+  "784412272805412895": {
+    "model": "nai-diffusion-4-5-full",
+    "width": 1216,
+    "height": 832,
+    "sampler": "k_euler_ancestral",
+    "noise_schedule": "karras",
+    "steps": 28,
+    "scale": 5,
+    "cfg_rescale": 0,
+    "negative_prompt": "blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract], normal quality, bad quality, low quality, worst quality, lowres, displeasing, very displeasing, {bad}, bad anatomy, bad hands, text, error, missing, missing finger, extra, extra digits, fewer, fewer digits, cropped, JPEG artifacts, signature, watermark, username, blurry, artist name, bad face, fat, duplicate, mutation, deformed, disfigured, extra arms, extra legs, long neck, bad feet, bad proportions, extra, fewer, unfinished, chromatic aberration, scan, scan artifacts, muscular female, monochrome, glasses, head out of frame nostrils, lips, {hands on own chest, hand on breast}, no pupils, white pupils, snake head, snake tail, open shirt, breasts grab, opening eyes, tight clothes, squeezing, wet clothes, see-through, popped button, ponytail, twintails, tied hair, braid, side ponytail, asymmetrical hair, chinese clothes, ear piercing, choker, grey background, shirt lift, mole, hand in own hair, braid, tied hair, ribbon, sleeves rolled up, opening eyes, tie clip, glowing eyes, hime cut, belt, long sideburns, tied hair, ponytail, side ponytail, hair flowing over, short sleeves, touching breast, touching necktie, breast press, cropped jacket, crop top, loli, sitting, forehead jewel, forehead mark, blue hair, close-up, leaning forward, nostril, horse ears, blush",
+    "_last_prompt": "1girl, interior, laboratory, dark background, spotlight on table, translucent ice sword, frost, cold aura, ice crystals, sparkling, high contrast, from above, wide shot, dutch angle  Magazine cover style. A single, stunningly beautiful ice sword lies on a dark metallic table, emitting a cold, white frosty mist that curls around the edges. Above the sword, the sharp, analytical eyes of a researcher are visible, staring down with intense intellectual curiosity.  girl, female, 1.1::aged up::, 0.8::medium hair::, 0.5::short hair::, sidelocks, black hair, 0.3::brown hair::, low ponytail, pale skin, 0.3::small breasts::, 1::flat chest::, 0.9::skinny::, glasses, round eyewear, id card, blue lanyard, lab coat, white lab coat, black turtleneck, black shirt, 0.7::grey shirt::, long sleeves, shirt tucked in, black slacks, loafers, office lady, black eyes, 0.3::brown eyes::, 1.2::tsurime::, 0.1::shiny skin, deep skin::, leaning over, looking down, obsession",
+    "_last_action": "generate"
+  }
+}
