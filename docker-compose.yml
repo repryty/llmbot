@@ -1,6 +1,6 @@
 services:
   bot:
-    build: .
+    image: ghcr.io/repryty/llmbot:latest
     env_file:
       - .env
     restart: unless-stopped
