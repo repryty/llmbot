@@ -15,6 +15,34 @@ logger = logging.getLogger(__name__)
 
 STREAM_UPDATE_INTERVAL = 3.0
 
+CHAT_PARAM_KEYS = [
+    "model", "temperature", "top_p", "max_tokens", "stop",
+    "seed", "presence_penalty", "frequency_penalty", "n", "response_format",
+]
+
+CHAT_PARAM_TYPES = {
+    "model": "str",
+    "temperature": "float",
+    "top_p": "float",
+    "max_tokens": "int",
+    "stop": "comma_list",
+    "seed": "int",
+    "presence_penalty": "float",
+    "frequency_penalty": "float",
+    "n": "int",
+    "response_format": "response_format",
+}
+
+CHAT_PARAM_VALUE_HINTS = {
+    "temperature": "0~2",
+    "top_p": "0~1",
+    "presence_penalty": "-2~2",
+    "frequency_penalty": "-2~2",
+    "n": "1 이상",
+    "response_format": "text / json_object",
+    "stop": "쉼표로 구분 (예: </s>,###)",
+}
+
 
 def _check_whitelist(interaction: discord.Interaction):
     if interaction.user.id not in settings.whitelist_ids:
@@ -22,13 +50,10 @@ def _check_whitelist(interaction: discord.Interaction):
 
 
 def _thinking_display(thinking_text: str) -> str:
-    """Return the last completed line from thinking text, formatted with -# prefix."""
     lines = thinking_text.split("\n")
-    # lines[:-1] are lines that ended with \n (completed lines)
     completed = [l.strip() for l in lines[:-1] if l.strip()]
     if completed:
         return f"-# {completed[-1][:200]}"
-    # No completed line yet — show tail of current in-progress line
     current = lines[-1].strip()
     return f"-# {current[-80:]}" if current else "-# ..."
 
@@ -44,9 +69,99 @@ def _build_stream_display(
     return (text[:1990] + "...") if len(text) > 1990 else (text or "...")
 
 
+async def chat_key_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    choices = ["clear"] + CHAT_PARAM_KEYS
+    return [
+        app_commands.Choice(name=k, value=k)
+        for k in choices
+        if current.lower() in k.lower()
+    ][:25]
+
+
+async def chat_value_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    key = interaction.namespace.key or ""
+    enum_choices = {
+        "response_format": ["text", "json_object"],
+    }.get(key, [])
+    suggestions = enum_choices + ["clear"]
+    return [
+        app_commands.Choice(name=s, value=s)
+        for s in suggestions
+        if current.lower() in s.lower()
+    ][:25]
+
+
 class ChatCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def _stream_chat(
+        self,
+        user_id: str,
+        prompt: str,
+        params: dict,
+        send_fn,
+        edit_fn,
+        error_fn,
+    ):
+        session_manager.add_message(user_id, "user", prompt)
+        messages = session_manager.get_messages(user_id)
+
+        thinking_parts: list[str] = []
+        content_parts: list[str] = []
+        is_thinking = False
+        last_update = time.monotonic()
+        reply_msg = None
+
+        try:
+            async for thinking_chunk, content_chunk in ollama_client.chat_stream(
+                messages=messages, **params
+            ):
+                if thinking_chunk:
+                    thinking_parts.append(thinking_chunk)
+                    is_thinking = True
+                if content_chunk:
+                    content_parts.append(content_chunk)
+                    is_thinking = False
+
+                now = time.monotonic()
+                if now - last_update >= STREAM_UPDATE_INTERVAL:
+                    display = _build_stream_display(thinking_parts, content_parts, is_thinking)
+                    if reply_msg is None:
+                        reply_msg = await send_fn(display)
+                    else:
+                        await edit_fn(reply_msg, display)
+                    last_update = now
+
+            full_reply = "".join(content_parts)
+            session_manager.add_message(user_id, "assistant", full_reply)
+
+            final = full_reply or "".join(thinking_parts) or "(응답 없음)"
+            if len(final) > 2000:
+                final = final[:1997] + "..."
+
+            if reply_msg is None:
+                await send_fn(final)
+            else:
+                await edit_fn(reply_msg, final)
+
+        except Exception as e:
+            logger.exception(
+                "chat 오류 | user=%s prompt=%r params=%r messages_count=%d",
+                user_id, prompt, params, len(messages),
+            )
+            error_text = format_error(
+                e,
+                user=user_id,
+                prompt=prompt,
+                params=params,
+                messages_count=len(messages),
+            )
+            await error_fn(reply_msg, error_text)
 
     @app_commands.command(name="chat", description="Ollama AI와 대화를 나눕니다.")
     @app_commands.describe(
@@ -72,10 +187,7 @@ class ChatCog(commands.Cog):
         if system:
             session_manager.set_system_prompt(user_id, system)
 
-        session_manager.add_message(user_id, "user", prompt)
-        messages = session_manager.get_messages(user_id)
         params = session_manager.get_params(user_id)
-
         if temperature is not None:
             params["temperature"] = temperature
         if top_p is not None:
@@ -83,60 +195,55 @@ class ChatCog(commands.Cog):
         if max_tokens is not None:
             params["max_tokens"] = max_tokens
 
-        thinking_parts: list[str] = []
-        content_parts: list[str] = []
-        is_thinking = False
-        last_update = time.monotonic()
-        followup_msg = None
+        async def send_fn(text):
+            return await interaction.followup.send(text)
 
-        try:
-            async for thinking_chunk, content_chunk in ollama_client.chat_stream(
-                messages=messages, **params
-            ):
-                if thinking_chunk:
-                    thinking_parts.append(thinking_chunk)
-                    is_thinking = True
-                if content_chunk:
-                    content_parts.append(content_chunk)
-                    is_thinking = False
+        async def edit_fn(msg, text):
+            await msg.edit(content=text)
 
-                now = time.monotonic()
-                if now - last_update >= STREAM_UPDATE_INTERVAL:
-                    display = _build_stream_display(thinking_parts, content_parts, is_thinking)
-                    if followup_msg is None:
-                        followup_msg = await interaction.followup.send(display)
-                    else:
-                        await followup_msg.edit(content=display)
-                    last_update = now
-
-            full_reply = "".join(content_parts)
-            session_manager.add_message(user_id, "assistant", full_reply)
-
-            final = full_reply or "".join(thinking_parts) or "(응답 없음)"
-            if len(final) > 2000:
-                final = final[:1997] + "..."
-
-            if followup_msg is None:
-                await interaction.followup.send(final)
+        async def error_fn(msg, text):
+            if msg is None:
+                await interaction.followup.send(text, ephemeral=True)
             else:
-                await followup_msg.edit(content=final)
+                await msg.edit(content=text)
 
-        except Exception as e:
-            logger.exception(
-                "chat 명령어 오류 | user=%s prompt=%r params=%r messages_count=%d",
-                user_id, prompt, params, len(messages),
-            )
-            error_msg = format_error(
-                e,
-                user=f"{interaction.user} (ID: {user_id})",
-                prompt=prompt,
-                params=params,
-                messages_count=len(messages),
-            )
-            if followup_msg is None:
-                await interaction.followup.send(error_msg, ephemeral=True)
+        await self._stream_chat(user_id, prompt, params, send_fn, edit_fn, error_fn)
+
+    @commands.Cog.listener()
+    async def on_message(self, message: discord.Message):
+        if message.author.bot:
+            return
+        if self.bot.user not in message.mentions:
+            return
+        if message.author.id not in settings.whitelist_ids:
+            return
+
+        content = (
+            message.content
+            .replace(f"<@{self.bot.user.id}>", "")
+            .replace(f"<@!{self.bot.user.id}>", "")
+            .strip()
+        )
+        if not content:
+            return
+
+        user_id = str(message.author.id)
+        params = session_manager.get_params(user_id)
+
+        async def send_fn(text):
+            return await message.reply(text)
+
+        async def edit_fn(msg, text):
+            await msg.edit(content=text)
+
+        async def error_fn(msg, text):
+            if msg is None:
+                await message.reply(text)
             else:
-                await followup_msg.edit(content=error_msg)
+                await msg.edit(content=text)
+
+        async with message.channel.typing():
+            await self._stream_chat(user_id, content, params, send_fn, edit_fn, error_fn)
 
     @app_commands.command(name="reset", description="대화 세션을 초기화합니다.")
     async def reset(self, interaction: discord.Interaction):
@@ -191,113 +298,33 @@ class ChatCog(commands.Cog):
 
         lines = []
         for i, msg in enumerate(messages, 1):
-            content = msg["content"]
-            if len(content) > 200:
-                content = content[:200] + "..."
-            lines.append(f"**{i}. [{msg['role']}]** {content}")
+            c = msg["content"]
+            if len(c) > 200:
+                c = c[:200] + "..."
+            lines.append(f"**{i}. [{msg['role']}]** {c}")
 
         text = "\n".join(lines)
         if len(text) > 1900:
             text = text[:1900] + "\n... (중략)"
         await interaction.response.send_message(text, ephemeral=True)
 
-    @app_commands.command(name="params", description="현재 세션의 파라미터를 확인합니다.")
-    async def params(self, interaction: discord.Interaction):
+    @app_commands.command(name="models", description="사용 가능한 Ollama 모델 목록을 조회합니다.")
+    async def models(self, interaction: discord.Interaction):
         _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        params = session_manager.get_params(user_id)
-        if not params:
-            await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
-            return
-        lines = [f"**{k}:** {v}" for k, v in params.items()]
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
-
-    # --- 개별 파라미터 설정 명령어 ---
-
-    @app_commands.command(name="set_model", description="Ollama 모델을 변경합니다.")
-    @app_commands.describe(model="모델 ID")
-    async def set_model(self, interaction: discord.Interaction, model: str):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, model=model)
-        await interaction.response.send_message(f"모델이 `{model}`로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_temperature", description="temperature를 설정합니다.")
-    @app_commands.describe(value="0~2 사이 값")
-    async def set_temperature(self, interaction: discord.Interaction, value: float):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, temperature=value)
-        await interaction.response.send_message(f"temperature={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_top_p", description="top_p를 설정합니다.")
-    @app_commands.describe(value="0~1 사이 값")
-    async def set_top_p(self, interaction: discord.Interaction, value: float):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, top_p=value)
-        await interaction.response.send_message(f"top_p={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_max_tokens", description="max_tokens를 설정합니다.")
-    @app_commands.describe(value="최대 토큰 수")
-    async def set_max_tokens(self, interaction: discord.Interaction, value: int):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, max_tokens=value)
-        await interaction.response.send_message(f"max_tokens={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_stop", description="stop 시퀀스를 설정합니다. 쉼표로 여러 개 구분 가능.")
-    @app_commands.describe(stop="예: </s>,###")
-    async def set_stop(self, interaction: discord.Interaction, stop: str):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        stops = [s.strip() for s in stop.split(",")]
-        session_manager.update_params(user_id, stop=stops)
-        await interaction.response.send_message(f"stop={stops}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_seed", description="seed를 설정합니다.")
-    @app_commands.describe(value="정수 seed 값")
-    async def set_seed(self, interaction: discord.Interaction, value: int):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, seed=value)
-        await interaction.response.send_message(f"seed={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_presence_penalty", description="presence_penalty를 설정합니다.")
-    @app_commands.describe(value="-2~2 사이 값")
-    async def set_presence_penalty(self, interaction: discord.Interaction, value: float):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, presence_penalty=value)
-        await interaction.response.send_message(f"presence_penalty={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_frequency_penalty", description="frequency_penalty를 설정합니다.")
-    @app_commands.describe(value="-2~2 사이 값")
-    async def set_frequency_penalty(self, interaction: discord.Interaction, value: float):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, frequency_penalty=value)
-        await interaction.response.send_message(f"frequency_penalty={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_n", description="n (생성할 응답 수)를 설정합니다.")
-    @app_commands.describe(value="1 이상 정수")
-    async def set_n(self, interaction: discord.Interaction, value: int):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, n=value)
-        await interaction.response.send_message(f"n={value}로 설정되었습니다.", ephemeral=True)
-
-    @app_commands.command(name="set_response_format", description="response_format을 설정합니다.")
-    @app_commands.describe(type_="text 또는 json_object")
-    @app_commands.choices(type_=[
-        app_commands.Choice(name="text", value="text"),
-        app_commands.Choice(name="json_object", value="json_object"),
-    ])
-    async def set_response_format(self, interaction: discord.Interaction, type_: str):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.update_params(user_id, response_format={"type": type_})
-        await interaction.response.send_message(f"response_format={type_}로 설정되었습니다.", ephemeral=True)
+        await interaction.response.defer(thinking=True)
+        try:
+            model_list = await ollama_client.list_models()
+            if not model_list:
+                await interaction.followup.send("모델 목록을 가져올 수 없습니다.")
+                return
+            lines = [f"- `{m['id']}`" for m in model_list]
+            text = "사용 가능한 모델:\n" + "\n".join(lines)
+            if len(text) > 1900:
+                text = text[:1900] + "\n... (중략)"
+            await interaction.followup.send(text)
+        except Exception as e:
+            logger.exception("models 명령어 오류 | user=%s", interaction.user.id)
+            await interaction.followup.send(format_error(e, command="models"), ephemeral=True)
 
     @app_commands.command(name="tools", description="tools 설정 (JSON 문자열). 비워두면 제거.")
     @app_commands.describe(json_str="JSON 문자열 또는 비워두기")
@@ -315,40 +342,87 @@ class ChatCog(commands.Cog):
         except json.JSONDecodeError:
             await interaction.response.send_message("유효하지 않은 JSON입니다.", ephemeral=True)
 
-    @app_commands.command(name="models", description="사용 가능한 Ollama 모델 목록을 조회합니다.")
-    async def models(self, interaction: discord.Interaction):
+    @app_commands.command(name="set", description="파라미터를 설정·조회·초기화합니다.")
+    @app_commands.describe(
+        key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
+        value="설정할 값 (생략 시 현재 값 조회, 'clear'로 해당 파라미터 제거)",
+    )
+    @app_commands.autocomplete(key=chat_key_autocomplete, value=chat_value_autocomplete)
+    async def set_param(
+        self,
+        interaction: discord.Interaction,
+        key: Optional[str] = None,
+        value: Optional[str] = None,
+    ):
         _check_whitelist(interaction)
-        await interaction.response.defer(thinking=True)
-        try:
-            models = await ollama_client.list_models()
-            if not models:
-                await interaction.followup.send("모델 목록을 가져올 수 없습니다.")
+        user_id = str(interaction.user.id)
+
+        if key is None:
+            current = session_manager.get_params(user_id)
+            if not current:
+                await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
                 return
-            lines = [f"- `{m['id']}`" for m in models]
-            text = "사용 가능한 모델:\n" + "\n".join(lines)
-            if len(text) > 1900:
-                text = text[:1900] + "\n... (중략)"
-            await interaction.followup.send(text)
-        except Exception as e:
-            logger.exception("models 명령어 오류 | user=%s", interaction.user.id)
-            await interaction.followup.send(format_error(e, command="models"), ephemeral=True)
+            lines = [f"**{k}:** `{v}`" for k, v in current.items()]
+            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            return
 
-    # --- 파라미터 제거 / 초기화 ---
+        if key == "clear":
+            session_manager.clear_params(user_id)
+            await interaction.response.send_message("모든 파라미터가 초기화되었습니다.", ephemeral=True)
+            return
 
-    @app_commands.command(name="clear_params", description="현재 세션의 모든 파라미터를 초기화합니다.")
-    async def clear_params(self, interaction: discord.Interaction):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.clear_params(user_id)
-        await interaction.response.send_message("모든 파라미터가 초기화되었습니다.", ephemeral=True)
+        if key not in CHAT_PARAM_TYPES:
+            valid = ", ".join(f"`{k}`" for k in CHAT_PARAM_KEYS)
+            await interaction.response.send_message(
+                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}", ephemeral=True
+            )
+            return
 
-    @app_commands.command(name="remove_param", description="특정 파라미터를 제거합니다.")
-    @app_commands.describe(key="제거할 파라미터 이름")
-    async def remove_param(self, interaction: discord.Interaction, key: str):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        session_manager.remove_param(user_id, key)
-        await interaction.response.send_message(f"파라미터 `{key}`가 제거되었습니다.", ephemeral=True)
+        if value is None:
+            current = session_manager.get_params(user_id)
+            hint = CHAT_PARAM_VALUE_HINTS.get(key, "")
+            hint_str = f"  ({hint})" if hint else ""
+            if key in current:
+                await interaction.response.send_message(
+                    f"**{key}:** `{current[key]}`{hint_str}", ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"**{key}:** 설정되지 않음{hint_str}", ephemeral=True
+                )
+            return
+
+        if value == "clear":
+            session_manager.remove_param(user_id, key)
+            await interaction.response.send_message(f"파라미터 `{key}`가 제거되었습니다.", ephemeral=True)
+            return
+
+        type_name = CHAT_PARAM_TYPES[key]
+        try:
+            if type_name == "str":
+                parsed = value
+            elif type_name == "int":
+                parsed = int(value)
+            elif type_name == "float":
+                parsed = float(value)
+            elif type_name == "comma_list":
+                parsed = [s.strip() for s in value.split(",") if s.strip()]
+            elif type_name == "response_format":
+                if value not in ("text", "json_object"):
+                    raise ValueError("text 또는 json_object 중 하나여야 합니다")
+                parsed = {"type": value}
+            else:
+                parsed = value
+        except ValueError as e:
+            hint = CHAT_PARAM_VALUE_HINTS.get(key, "")
+            hint_str = f"\n예상 형식: {hint}" if hint else ""
+            await interaction.response.send_message(
+                f"잘못된 값: `{value}`{hint_str}\n오류: {e}", ephemeral=True
+            )
+            return
+
+        session_manager.update_params(user_id, **{key: parsed})
+        await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
