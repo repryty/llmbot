@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 import openai
 from bot.core.config import settings
 
@@ -24,6 +24,29 @@ class OllamaClient:
         }
         response = await self.client.chat.completions.create(**payload)
         return response.choices[0].message.content or ""
+
+    async def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        model: Optional[str] = None,
+        **params: Any,
+    ) -> AsyncGenerator[tuple[str, str], None]:
+        """Yields (thinking_chunk, content_chunk) pairs via streaming."""
+        payload = {
+            "model": model or settings.OLLAMA_MODEL,
+            "messages": messages,
+            "stream": True,
+            **params,
+        }
+        stream = await self.client.chat.completions.create(**payload)
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            thinking = getattr(delta, "reasoning_content", None) or ""
+            content = delta.content or ""
+            if thinking or content:
+                yield thinking, content
 
     async def list_models(self) -> list[dict[str, Any]]:
         try:
