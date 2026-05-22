@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from typing import Optional
 import discord
@@ -8,6 +9,9 @@ from discord import app_commands
 from bot.core.session_manager import session_manager
 from bot.core.ollama_client import ollama_client
 from bot.core.config import settings
+from bot.core.error_utils import format_error
+
+logger = logging.getLogger(__name__)
 
 STREAM_UPDATE_INTERVAL = 3.0
 
@@ -118,10 +122,21 @@ class ChatCog(commands.Cog):
                 await followup_msg.edit(content=final)
 
         except Exception as e:
+            logger.exception(
+                "chat 명령어 오류 | user=%s prompt=%r params=%r messages_count=%d",
+                user_id, prompt, params, len(messages),
+            )
+            error_msg = format_error(
+                e,
+                user=f"{interaction.user} (ID: {user_id})",
+                prompt=prompt,
+                params=params,
+                messages_count=len(messages),
+            )
             if followup_msg is None:
-                await interaction.followup.send(f"에러 발생: {e}", ephemeral=True)
+                await interaction.followup.send(error_msg, ephemeral=True)
             else:
-                await followup_msg.edit(content=f"에러 발생: {e}")
+                await followup_msg.edit(content=error_msg)
 
     @app_commands.command(name="reset", description="대화 세션을 초기화합니다.")
     async def reset(self, interaction: discord.Interaction):
@@ -315,7 +330,8 @@ class ChatCog(commands.Cog):
                 text = text[:1900] + "\n... (중략)"
             await interaction.followup.send(text)
         except Exception as e:
-            await interaction.followup.send(f"에러 발생: {e}", ephemeral=True)
+            logger.exception("models 명령어 오류 | user=%s", interaction.user.id)
+            await interaction.followup.send(format_error(e, command="models"), ephemeral=True)
 
     # --- 파라미터 제거 / 초기화 ---
 
