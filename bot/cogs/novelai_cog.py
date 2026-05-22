@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 import discord
@@ -8,6 +9,9 @@ from discord import app_commands
 
 from bot.core.config import settings
 from bot.core.novelai_client import novelai_client
+from bot.core.error_utils import format_error
+
+logger = logging.getLogger(__name__)
 
 PARAMS_PATH = Path("data/image_params.json")
 
@@ -164,7 +168,21 @@ class NovelAICog(commands.Cog):
             ]
             await interaction.followup.send(files=files)
         except Exception as e:
-            await interaction.followup.send(f"에러 발생: {e}", ephemeral=True)
+            logger.exception(
+                "novelai_image 오류 | user=%s prompt=%r model=%s action=%s params=%r",
+                user_id, used_prompt, used_model, used_action, api_params,
+            )
+            await interaction.followup.send(
+                format_error(
+                    e,
+                    user=f"{interaction.user} (ID: {user_id})",
+                    prompt=used_prompt,
+                    model=used_model,
+                    action=used_action,
+                    api_params=api_params,
+                ),
+                ephemeral=True,
+            )
 
     # ---------- 프리셋 ----------
 

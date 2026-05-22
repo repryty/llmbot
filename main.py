@@ -1,9 +1,15 @@
 import asyncio
-import os
+import logging
 import discord
 from discord.ext import commands
 
 from bot.core.config import settings
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -21,19 +27,19 @@ async def load_extensions():
     for cog in COGS:
         try:
             await bot.load_extension(cog)
-            print(f"Loaded {cog}")
-        except Exception as e:
-            print(f"Failed to load {cog}: {e}")
+            logger.info(f"Loaded {cog}")
+        except Exception:
+            logger.exception(f"Failed to load {cog}")
 
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
+    logger.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
     try:
         synced = await bot.tree.sync()
-        print(f"Synced {len(synced)} command(s)")
-    except Exception as e:
-        print(f"Failed to sync commands: {e}")
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception:
+        logger.exception("Failed to sync commands")
 
 
 async def main():
