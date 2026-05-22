@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Optional
 import discord
 from discord.ext import commands
@@ -8,10 +9,35 @@ from bot.core.session_manager import session_manager
 from bot.core.ollama_client import ollama_client
 from bot.core.config import settings
 
+STREAM_UPDATE_INTERVAL = 3.0
+
 
 def _check_whitelist(interaction: discord.Interaction):
     if interaction.user.id not in settings.whitelist_ids:
         raise app_commands.CheckFailure("이 명령어를 사용할 권한이 없습니다.")
+
+
+def _thinking_display(thinking_text: str) -> str:
+    """Return the last completed line from thinking text, formatted with -# prefix."""
+    lines = thinking_text.split("\n")
+    # lines[:-1] are lines that ended with \n (completed lines)
+    completed = [l.strip() for l in lines[:-1] if l.strip()]
+    if completed:
+        return f"-# {completed[-1][:200]}"
+    # No completed line yet — show tail of current in-progress line
+    current = lines[-1].strip()
+    return f"-# {current[-80:]}" if current else "-# ..."
+
+
+def _build_stream_display(
+    thinking_parts: list[str],
+    content_parts: list[str],
+    is_thinking: bool,
+) -> str:
+    if is_thinking:
+        return _thinking_display("".join(thinking_parts))
+    text = "".join(content_parts)
+    return (text[:1990] + "...") if len(text) > 1990 else (text or "...")
 
 
 class ChatCog(commands.Cog):
@@ -53,12 +79,49 @@ class ChatCog(commands.Cog):
         if max_tokens is not None:
             params["max_tokens"] = max_tokens
 
+        thinking_parts: list[str] = []
+        content_parts: list[str] = []
+        is_thinking = False
+        last_update = time.monotonic()
+        followup_msg = None
+
         try:
-            reply = await ollama_client.chat(messages=messages, **params)
-            session_manager.add_message(user_id, "assistant", reply)
-            await interaction.followup.send(reply)
+            async for thinking_chunk, content_chunk in ollama_client.chat_stream(
+                messages=messages, **params
+            ):
+                if thinking_chunk:
+                    thinking_parts.append(thinking_chunk)
+                    is_thinking = True
+                if content_chunk:
+                    content_parts.append(content_chunk)
+                    is_thinking = False
+
+                now = time.monotonic()
+                if now - last_update >= STREAM_UPDATE_INTERVAL:
+                    display = _build_stream_display(thinking_parts, content_parts, is_thinking)
+                    if followup_msg is None:
+                        followup_msg = await interaction.followup.send(display)
+                    else:
+                        await followup_msg.edit(content=display)
+                    last_update = now
+
+            full_reply = "".join(content_parts)
+            session_manager.add_message(user_id, "assistant", full_reply)
+
+            final = full_reply or "".join(thinking_parts) or "(응답 없음)"
+            if len(final) > 2000:
+                final = final[:1997] + "..."
+
+            if followup_msg is None:
+                await interaction.followup.send(final)
+            else:
+                await followup_msg.edit(content=final)
+
         except Exception as e:
-            await interaction.followup.send(f"에러 발생: {e}", ephemeral=True)
+            if followup_msg is None:
+                await interaction.followup.send(f"에러 발생: {e}", ephemeral=True)
+            else:
+                await followup_msg.edit(content=f"에러 발생: {e}")
 
     @app_commands.command(name="reset", description="대화 세션을 초기화합니다.")
     async def reset(self, interaction: discord.Interaction):

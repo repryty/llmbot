@@ -41,7 +41,8 @@ IMAGE_PRESETS = {
 
 # _last_prompt, _last_action : 내부 추적용 (API에 전달하지 않음)
 # model                      : API 최상위 필드 (parameters 안에 들어가지 않음)
-_INTERNAL_KEYS = {"_last_prompt", "_last_action", "model"}
+# _pre_positive, _pre_negative : 선행 프롬프트 (그림체 프리셋 저장용)
+_INTERNAL_KEYS = {"_last_prompt", "_last_action", "model", "_pre_positive", "_pre_negative"}
 
 
 class NovelAICog(commands.Cog):
@@ -111,25 +112,38 @@ class NovelAICog(commands.Cog):
         user_id = str(interaction.user.id)
         stored = self._get_image_params(user_id)
 
-        used_prompt = prompt or stored.get("_last_prompt")
-        if not used_prompt:
+        pre_positive = stored.get("_pre_positive", "")
+        pre_negative = stored.get("_pre_negative", "")
+
+        # 후행 포지티브: 이번에 입력한 값 우선, 없으면 마지막 사용값
+        post_positive = prompt or stored.get("_last_prompt", "")
+
+        if not post_positive and not pre_positive:
             await interaction.followup.send(
                 "프롬프트를 입력하거나 먼저 한 번 이상 사용해야 합니다.", ephemeral=True
             )
             return
 
+        # 선행 + 후행 합성
+        used_prompt = ", ".join(p for p in [pre_positive, post_positive] if p)
         used_model = model or stored.get("model", "nai-diffusion-4-5")
         used_action = action or stored.get("_last_action", "generate")
 
-        # negative_prompt: 이번에 입력한 값이 있으면 덮어쓰고 저장, 없으면 기존값 유지
+        # 후행 네거티브: 이번에 입력한 값이 있으면 덮어쓰고 저장
         if negative_prompt is not None:
             stored["negative_prompt"] = negative_prompt
 
         # API에 넘길 parameters 빌드 (내부 추적 키 제외)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
 
-        # 사용한 값 저장
-        stored["_last_prompt"] = used_prompt
+        # 선행 네거티브 + 후행 네거티브 합성
+        post_negative = stored.get("negative_prompt", "")
+        combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
+        if combined_negative:
+            api_params["negative_prompt"] = combined_negative
+
+        # 후행 프롬프트만 저장 (다음 호출 시 선행과 다시 합성)
+        stored["_last_prompt"] = post_positive
         stored["_last_action"] = used_action
         stored["model"] = used_model
         self._save_params()
@@ -335,6 +349,58 @@ class NovelAICog(commands.Cog):
         self._get_image_params(str(interaction.user.id))["noise"] = value
         self._save_params()
         await interaction.response.send_message(f"noise={value}", ephemeral=True)
+
+    # ---------- 선행 프롬프트 (그림체 프리셋) ----------
+
+    @app_commands.command(name="nai_set_pre_prompt", description="선행 프롬프트를 설정합니다. (그림체/스타일 프리셋 저장용)")
+    @app_commands.describe(
+        positive="선행 포지티브 프롬프트 (생략 시 유지)",
+        negative="선행 네거티브 프롬프트 (생략 시 유지)",
+    )
+    async def nai_set_pre_prompt(
+        self,
+        interaction: discord.Interaction,
+        positive: Optional[str] = None,
+        negative: Optional[str] = None,
+    ):
+        self._check_whitelist(interaction)
+        if positive is None and negative is None:
+            await interaction.response.send_message(
+                "positive 또는 negative 중 하나 이상 입력해야 합니다.", ephemeral=True
+            )
+            return
+        stored = self._get_image_params(str(interaction.user.id))
+        if positive is not None:
+            stored["_pre_positive"] = positive
+        if negative is not None:
+            stored["_pre_negative"] = negative
+        self._save_params()
+        lines = []
+        if positive is not None:
+            lines.append(f"**선행 포지티브:** {positive}")
+        if negative is not None:
+            lines.append(f"**선행 네거티브:** {negative}")
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+    @app_commands.command(name="nai_show_pre_prompt", description="현재 저장된 선행 프롬프트를 확인합니다.")
+    async def nai_show_pre_prompt(self, interaction: discord.Interaction):
+        self._check_whitelist(interaction)
+        stored = self._get_image_params(str(interaction.user.id))
+        pre_pos = stored.get("_pre_positive") or "(없음)"
+        pre_neg = stored.get("_pre_negative") or "(없음)"
+        await interaction.response.send_message(
+            f"**선행 포지티브:** {pre_pos}\n**선행 네거티브:** {pre_neg}",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="nai_clear_pre_prompt", description="선행 프롬프트를 초기화합니다.")
+    async def nai_clear_pre_prompt(self, interaction: discord.Interaction):
+        self._check_whitelist(interaction)
+        stored = self._get_image_params(str(interaction.user.id))
+        stored.pop("_pre_positive", None)
+        stored.pop("_pre_negative", None)
+        self._save_params()
+        await interaction.response.send_message("선행 프롬프트가 초기화되었습니다.", ephemeral=True)
 
     # ---------- 파라미터 초기화 ----------
 
