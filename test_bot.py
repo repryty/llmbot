@@ -102,8 +102,9 @@ def test_session_manager():
 
         # 리셋
         mgr.reset(uid)
-        assert mgr.get_messages(uid) == [] and mgr.get_params(uid) == {}
-        ok("세션 리셋")
+        assert mgr.get_messages(uid) == []
+        assert mgr.get_params(uid) == {"temperature": 0.8}
+        ok("세션 리셋 (메시지만 초기화, 파라미터 유지)")
 
         return True
     except AssertionError as e:

@@ -50,6 +50,8 @@ def _check_whitelist(interaction: discord.Interaction):
 
 
 def _thinking_display(thinking_text: str) -> str:
+    # 남아있는 think 태그 정리
+    thinking_text = thinking_text.replace("<think>", "").replace("</think>", "")
     lines = thinking_text.split("\n")
     completed = [l.strip() for l in lines[:-1] if l.strip()]
     if completed:

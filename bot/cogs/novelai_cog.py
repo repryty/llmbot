@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 import discord
 from discord.ext import commands
-from discord import app_commands
+from discord import app_commands, ui
 
 from bot.core.config import settings
 from bot.core.novelai_client import novelai_client
@@ -131,6 +131,129 @@ async def nai_value_autocomplete(
     ][:25]
 
 
+class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
+    prompt = ui.TextInput(
+        label="포지티브 프롬프트",
+        style=discord.TextStyle.paragraph,
+        max_length=2000,
+        required=True,
+    )
+    negative_prompt = ui.TextInput(
+        label="네거티브 프롬프트",
+        style=discord.TextStyle.paragraph,
+        max_length=2000,
+        required=False,
+    )
+
+    def __init__(
+        self,
+        cog: "NovelAICog",
+        message: discord.Message,
+        user_id: str,
+        original_prompt: str,
+        original_negative: str,
+    ):
+        super().__init__()
+        self.cog = cog
+        self.message = message
+        self.user_id = user_id
+        self.prompt.default = original_prompt
+        self.negative_prompt.default = original_negative or ""
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        new_prompt = self.prompt.value
+        new_negative = self.negative_prompt.value or ""
+
+        stored = self.cog._get_image_params(self.user_id)
+        pre_positive = stored.get("_pre_positive", "")
+        pre_negative = stored.get("_pre_negative", "")
+
+        used_prompt = ", ".join(p for p in [pre_positive, new_prompt] if p)
+        used_model = stored.get("model", "nai-diffusion-4-5")
+        used_action = stored.get("_last_action", "generate")
+
+        stored["_last_prompt"] = new_prompt
+        stored["negative_prompt"] = new_negative
+        self.cog._save_params()
+
+        api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
+        combined_negative = ", ".join(p for p in [pre_negative, new_negative] if p)
+        if combined_negative:
+            api_params["negative_prompt"] = combined_negative
+
+        try:
+            images = await novelai_client.generate_image(
+                input_text=used_prompt,
+                model=used_model,
+                action=used_action,
+                params=api_params,
+            )
+            if not images:
+                await interaction.followup.send("이미지를 생성하지 못했습니다.", ephemeral=True)
+                return
+            files = [
+                discord.File(io.BytesIO(img), filename=f"result_{i}.png")
+                for i, img in enumerate(images)
+            ]
+            view = NAIRegenerateView(self.cog, self.user_id, new_prompt, new_negative)
+            await self.message.edit(
+                content=f"**프롬프트:** `{new_prompt}`\n**네거티브:** `{new_negative or '(없음)'}`",
+                attachments=[],
+                files=files,
+                view=view,
+            )
+            view.message = self.message
+        except Exception as e:
+            logger.exception(
+                "nai 재생성 오류 | user=%s prompt=%r model=%s action=%s params=%r",
+                self.user_id, used_prompt, used_model, used_action, api_params,
+            )
+            await interaction.followup.send(
+                format_error(
+                    e,
+                    user=f"{interaction.user} (ID: {self.user_id})",
+                    prompt=used_prompt,
+                    model=used_model,
+                    action=used_action,
+                    api_params=api_params,
+                ),
+                ephemeral=True,
+            )
+
+
+class NAIRegenerateView(ui.View):
+    def __init__(
+        self,
+        cog: "NovelAICog",
+        user_id: str,
+        original_prompt: str,
+        original_negative: str,
+    ):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.user_id = user_id
+        self.original_prompt = original_prompt
+        self.original_negative = original_negative
+        self.message: Optional[discord.Message] = None
+
+    @ui.button(label="프롬프트 수정", style=discord.ButtonStyle.secondary, emoji="✏️")
+    async def edit_button(self, interaction: discord.Interaction, button: ui.Button):
+        if str(interaction.user.id) != self.user_id:
+            await interaction.response.send_message(
+                "다른 사용자가 생성한 이미지는 수정할 수 없습니다.", ephemeral=True
+            )
+            return
+        modal = NAIPromptModal(
+            self.cog,
+            self.message or interaction.message,
+            self.user_id,
+            self.original_prompt,
+            self.original_negative,
+        )
+        await interaction.response.send_modal(modal)
+
+
 class NovelAICog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -236,7 +359,9 @@ class NovelAICog(commands.Cog):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            await interaction.followup.send(files=files)
+            view = NAIRegenerateView(self, user_id, post_positive, post_negative)
+            message = await interaction.followup.send(files=files, view=view)
+            view.message = message
         except Exception as e:
             logger.exception(
                 "nai 오류 | user=%s prompt=%r model=%s action=%s params=%r",

@@ -10,8 +10,6 @@ class Session:
 
     def reset(self):
         self.messages = []
-        self.params = {}
-        self.system_prompt = None
 
     def add_message(self, role: str, content: str):
         self.messages.append({"role": role, "content": content})

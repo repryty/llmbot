@@ -39,14 +39,49 @@ class OllamaClient:
             **params,
         }
         stream = await self.client.chat.completions.create(**payload)
+        in_think = False
         async for chunk in stream:
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
             thinking = getattr(delta, "reasoning_content", None) or ""
             content = delta.content or ""
-            if thinking or content:
-                yield thinking, content
+
+            # API가 reasoning_content를 직접 제공하면 그대로 사용
+            if thinking:
+                yield thinking, content or ""
+                continue
+
+            # 그렇지 않으면 content에서 <think> 태그 파싱
+            if not content:
+                continue
+
+            if in_think:
+                if "</think>" in content:
+                    in_think = False
+                    before, after = content.split("</think>", 1)
+                    yield before, ""
+                    if after:
+                        yield "", after
+                else:
+                    yield content, ""
+            else:
+                if "<think>" in content:
+                    in_think = True
+                    before, after = content.split("<think>", 1)
+                    if before:
+                        yield "", before
+                    if after:
+                        if "</think>" in after:
+                            in_think = False
+                            thinking_part, rest = after.split("</think>", 1)
+                            yield thinking_part, ""
+                            if rest:
+                                yield "", rest
+                        else:
+                            yield after, ""
+                else:
+                    yield "", content
 
     async def list_models(self) -> list[dict[str, Any]]:
         try:
