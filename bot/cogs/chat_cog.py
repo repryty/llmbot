@@ -71,6 +71,30 @@ def _build_stream_display(
     return (text[:1990] + "...") if len(text) > 1990 else (text or "...")
 
 
+async def _split_send(start_msg, text: str, send_fn, edit_fn):
+    """텍스트를 2000자 단위로 분할해 전송한다."""
+    if len(text) <= 2000:
+        if start_msg is None:
+            return await send_fn(text)
+        await edit_fn(start_msg, text)
+        return start_msg
+
+    chunks = []
+    while text:
+        chunks.append(text[:2000])
+        text = text[2000:]
+
+    if start_msg is None:
+        start_msg = await send_fn(chunks[0])
+    else:
+        await edit_fn(start_msg, chunks[0])
+
+    for chunk in chunks[1:]:
+        start_msg = await send_fn(chunk)
+
+    return start_msg
+
+
 async def chat_key_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -143,13 +167,7 @@ class ChatCog(commands.Cog):
             session_manager.add_message(user_id, "assistant", full_reply)
 
             final = full_reply or "".join(thinking_parts) or "(응답 없음)"
-            if len(final) > 2000:
-                final = final[:1997] + "..."
-
-            if reply_msg is None:
-                await send_fn(final)
-            else:
-                await edit_fn(reply_msg, final)
+            await _split_send(reply_msg, final, send_fn, edit_fn)
 
         except Exception as e:
             logger.exception(
@@ -226,6 +244,20 @@ class ChatCog(commands.Cog):
             .replace(f"<@!{self.bot.user.id}>", "")
             .strip()
         )
+
+        # 첨부된 txt 파일이 있으면 내용을 읽어 메시지 본문 대신 사용
+        txt_parts = []
+        for attachment in message.attachments:
+            if attachment.filename.endswith(".txt"):
+                try:
+                    file_text = (await attachment.read()).decode("utf-8")
+                    txt_parts.append(file_text)
+                except Exception:
+                    continue
+
+        if txt_parts:
+            content = "\n\n".join(txt_parts)
+
         if not content:
             return
 
