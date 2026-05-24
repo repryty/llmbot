@@ -167,7 +167,18 @@ class ChatCog(commands.Cog):
             session_manager.add_message(user_id, "assistant", full_reply)
 
             final = full_reply or "".join(thinking_parts) or "(응답 없음)"
-            await _split_send(reply_msg, final, send_fn, edit_fn)
+            first_reply = reply_msg
+            reply_msg = await _split_send(reply_msg, final, send_fn, edit_fn)
+            target = first_reply or reply_msg
+            if target is not None:
+                try:
+                    if hasattr(target, "add_reaction"):
+                        await target.add_reaction("✅")
+                    elif target.channel:
+                        fetched = await target.channel.fetch_message(target.id)
+                        await fetched.add_reaction("✅")
+                except Exception:
+                    pass
 
         except Exception as e:
             logger.exception(

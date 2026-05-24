@@ -4,10 +4,14 @@ from typing import Any
 from bot.models.session import Session
 
 SESSIONS_PATH = Path("data/chat_sessions.json")
+DEFAULT_PROMPT_PATH = Path("prompts/system_prompt.txt")
 
 
 class SessionManager:
     def __init__(self):
+        self._default_system_prompt: str | None = None
+        if DEFAULT_PROMPT_PATH.exists():
+            self._default_system_prompt = DEFAULT_PROMPT_PATH.read_text(encoding="utf-8").strip() or None
         self._sessions: dict[str, Session] = self._load()
 
     def _load(self) -> dict[str, Session]:
@@ -42,7 +46,7 @@ class SessionManager:
 
     def get(self, user_id: str) -> Session:
         if user_id not in self._sessions:
-            self._sessions[user_id] = Session()
+            self._sessions[user_id] = Session(system_prompt=self._default_system_prompt)
         return self._sessions[user_id]
 
     def reset(self, user_id: str):
