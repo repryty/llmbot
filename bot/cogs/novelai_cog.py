@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import logging
@@ -9,8 +10,8 @@ from discord import app_commands, ui
 
 from bot.core.config import settings
 from bot.core.novelai_client import novelai_client
-from bot.core.error_utils import format_error
-from bot.core.appearance_gen import generate_appearance
+from bot.core.error_utils import format_error, send_long
+from bot.core.appearance_gen import generate_appearance, WEIGHT_DEFAULTS
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,12 @@ IMAGE_PRESETS = {
 # _last_prompt, _last_action : 내부 추적용 (API에 전달하지 않음)
 # model                      : API 최상위 필드 (parameters 안에 들어가지 않음)
 # _pre_positive, _pre_negative : 선행 프롬프트 (그림체 프리셋 저장용)
-# _random_appearance         : 랜덤 외형 태그 (버튼으로 재생성)
+# _random_appearance         : 랜덤 외형 태그 (후행 프롬프트로 주입)
+# _random_config             : 랜덤 생성 가중치 설정
 _INTERNAL_KEYS = {
     "_last_prompt", "_last_action", "model",
     "_pre_positive", "_pre_negative", "_random_appearance",
+    "_random_config",
 }
 
 IMAGE_PARAM_KEYS = [
@@ -112,6 +115,68 @@ IMAGE_PARAM_VALUE_CHOICES: dict[str, list[str]] = {
 }
 
 
+# (type, default, description)
+RANDOM_WEIGHT_KEYS: dict[str, tuple] = {
+    "p_animal":      ("float", 0.10, "동물 특징(귀·꼬리·뿔 등) 생성 확률 [0.0~1.0]  기본 0.10"),
+    "p_skin":        ("float", 0.40, "피부 색상 생성 확률 [0.0~1.0]  기본 0.40"),
+    "p_eye_color":   ("float", 0.80, "눈 색상 생성 확률 [0.0~1.0]  기본 0.80"),
+    "p_eye_style":   ("float", 0.15, "눈 스타일(이색동공·하트눈 등) 생성 확률 [0.0~1.0]  기본 0.15"),
+    "p_eye_expr":    ("float", 0.25, "눈 표정(타레메·지토메 등) 생성 확률 [0.0~1.0]  기본 0.25"),
+    "p_hair_length": ("float", 0.80, "머리 길이 생성 확률 [0.0~1.0]  기본 0.80"),
+    "p_hair_color":  ("float", 0.70, "머리 색상 생성 확률 [0.0~1.0]  기본 0.70"),
+    "p_hair_multi":  ("float", 0.10, "다색 머리(그라데이션·레인보우 등) 생성 확률 [0.0~1.0]  기본 0.10"),
+    "p_braid":       ("float", 0.50, "묶음 스타일(포니테일·트윈테일 등) 생성 확률 [0.0~1.0]  기본 0.50"),
+    "p_hair_style":  ("float", 0.15, "머리 텍스처(웨이브·곱슬 등) 생성 확률 [0.0~1.0]  기본 0.15"),
+    "p_bangs":       ("float", 0.25, "앞머리 스타일 생성 확률 [0.0~1.0]  기본 0.25"),
+    "p_hair_acc":    ("float", 0.25, "머리 악세서리(리본·핀 등) 생성 확률 [0.0~1.0]  기본 0.25"),
+    "p_breast":      ("float", 0.50, "가슴 크기 생성 확률 (gender=f 전용) [0.0~1.0]  기본 0.50"),
+    "p_expression":  ("float", 0.60, "얼굴 표정 생성 확률 [0.0~1.0]  기본 0.60"),
+    "p_dress":       ("float", 0.25, "드레스·교복·기모노 등 원피스 계열 확률 [0.0~1.0]  기본 0.25"),
+    "p_swimwear":    ("float", 0.05, "수영복 확률 (드레스 미선택 시) [0.0~1.0]  기본 0.05"),
+    "p_bodysuit":    ("float", 0.05, "바디수트·레오타드 확률 (드레스·수영복 미선택 시) [0.0~1.0]  기본 0.05"),
+    "p_top":         ("float", 0.75, "상의(셔츠·블라우스·후드 등) 생성 확률 [0.0~1.0]  기본 0.75"),
+    "p_bottom":      ("float", 0.60, "하의(스커트·반바지·바지 등) 생성 확률 [0.0~1.0]  기본 0.60"),
+    "p_outerwear":   ("float", 0.30, "아우터(재킷·코트·망토 등) 생성 확률 [0.0~1.0]  기본 0.30"),
+    "p_hosiery":     ("float", 0.50, "스타킹·양말 생성 확률 [0.0~1.0]  기본 0.50"),
+    "p_footwear":    ("float", 0.55, "신발·부츠 생성 확률 [0.0~1.0]  기본 0.55"),
+    "p_headwear":    ("float", 0.15, "모자·왕관 등 머리 장식 생성 확률 [0.0~1.0]  기본 0.15"),
+    "p_accessory":   ("float", 0.35, "장갑·초커·넥타이·앞치마 등 악세서리 생성 확률 [0.0~1.0]  기본 0.35"),
+    "gender":        ("str",   "f",  "성별 (f=여성 / m=남성)  기본 f"),
+    "only_face":     ("bool",  False, "얼굴·머리 태그만 생성 / 신체 제외 여부  기본 false"),
+}
+
+
+async def random_key_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    choices = ["clear"] + list(RANDOM_WEIGHT_KEYS.keys())
+    return [
+        app_commands.Choice(name=k, value=k)
+        for k in choices
+        if current.lower() in k.lower()
+    ][:25]
+
+
+async def random_value_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    key = interaction.namespace.key or ""
+    if key == "gender":
+        suggestions = ["f", "m", "clear"]
+    elif key == "only_face":
+        suggestions = ["false", "true", "clear"]
+    elif key in RANDOM_WEIGHT_KEYS:
+        _, default, _ = RANDOM_WEIGHT_KEYS[key]
+        suggestions = [str(default), "clear"]
+    else:
+        suggestions = ["clear"]
+    return [
+        app_commands.Choice(name=s, value=s)
+        for s in suggestions
+        if current.lower() in s.lower()
+    ][:25]
+
+
 async def nai_key_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -135,29 +200,6 @@ async def nai_value_autocomplete(
         if current.lower() in s.lower()
     ][:25]
 
-
-def _build_prompt_display(
-    prompt: str,
-    negative: str = "",
-    pre_positive: str = "",
-    pre_negative: str = "",
-    appearance: str = "",
-) -> str:
-    def trunc(s: str, n: int = 200) -> str:
-        return s[:n] + "…" if len(s) > n else s
-
-    lines = []
-    if pre_positive:
-        lines.append(f"**선행+:** `{trunc(pre_positive)}`")
-    if appearance:
-        lines.append(f"**외형:** `{trunc(appearance)}`")
-    if prompt:
-        lines.append(f"**프롬프트:** `{trunc(prompt)}`")
-    if pre_negative:
-        lines.append(f"**선행-:** `{trunc(pre_negative)}`")
-    if negative:
-        lines.append(f"**네거티브:** `{trunc(negative)}`")
-    return "\n".join(lines)
 
 
 class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
@@ -223,7 +265,7 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
         stored["_pre_negative"] = new_pre_neg
         self.cog._save_params()
 
-        used_prompt = ", ".join(p for p in [new_pre_pos, appearance, new_prompt] if p)
+        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt, appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [new_pre_neg, new_negative] if p)
         if combined_negative:
@@ -245,9 +287,8 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            content = _build_prompt_display(new_prompt, new_negative, new_pre_pos, new_pre_neg, appearance)
             view = NAIRegenerateView(self.cog, self.user_id, new_prompt, new_negative)
-            await self.message.edit(content=content or None, attachments=files, view=view)
+            await self.message.edit(content=None, attachments=files, view=view)
             view.message = self.message
         except Exception as e:
             logger.exception(
@@ -315,7 +356,7 @@ class NAIRegenerateView(ui.View):
         await interaction.response.defer()
 
         stored = self.cog._get_image_params(self.user_id)
-        new_appearance = generate_appearance()
+        new_appearance = generate_appearance(config=stored.get("_random_config"))
         stored["_random_appearance"] = new_appearance
         self.cog._save_params()
 
@@ -326,7 +367,7 @@ class NAIRegenerateView(ui.View):
         used_model = stored.get("model", "nai-diffusion-4-5")
         used_action = stored.get("_last_action", "generate")
 
-        used_prompt = ", ".join(p for p in [pre_pos, new_appearance, last_prompt] if p)
+        used_prompt = ", ".join(p for p in [pre_pos, last_prompt, new_appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [pre_neg, post_negative] if p)
         if combined_negative:
@@ -350,9 +391,8 @@ class NAIRegenerateView(ui.View):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            content = _build_prompt_display(last_prompt, post_negative, pre_pos, pre_neg, new_appearance)
             view = NAIRegenerateView(self.cog, self.user_id, last_prompt, post_negative)
-            await target.edit(content=content or None, attachments=files, view=view)
+            await target.edit(content=None, attachments=files, view=view)
             view.message = target
         except Exception as e:
             logger.exception(
@@ -370,6 +410,161 @@ class NAIRegenerateView(ui.View):
                 ),
                 ephemeral=True,
             )
+
+
+BATCH_MAX_PROMPTS = 5
+BATCH_MAX_COUNT = 4
+BATCH_MAX_TOTAL = 10
+BATCH_MIN_INTERVAL = 3.0
+BATCH_MAX_INTERVAL = 60.0
+
+
+class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
+    prompts_input = ui.TextInput(
+        label="프롬프트 목록 (줄바꿈으로 구분, 최대 5개)",
+        style=discord.TextStyle.paragraph,
+        max_length=2000,
+        required=True,
+        placeholder="red hair, 1girl\nblue hair, 1girl",
+    )
+    count_input = ui.TextInput(
+        label=f"개당 생성 수 (1~{BATCH_MAX_COUNT})",
+        style=discord.TextStyle.short,
+        max_length=1,
+        required=False,
+        default="1",
+    )
+    interval_input = ui.TextInput(
+        label="호출 간격 (초, 3~60)",
+        style=discord.TextStyle.short,
+        max_length=3,
+        required=False,
+        default="5",
+    )
+    random_app_input = ui.TextInput(
+        label="랜덤 외형 매번 재생성 (y / n)",
+        style=discord.TextStyle.short,
+        max_length=3,
+        required=False,
+        default="n",
+    )
+
+    def __init__(self, cog: "NovelAICog", user_id: str):
+        super().__init__()
+        self.cog = cog
+        self.user_id = user_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        raw_prompts = [p.strip() for p in self.prompts_input.value.splitlines() if p.strip()]
+
+        try:
+            count = max(1, min(BATCH_MAX_COUNT, int(self.count_input.value.strip() or "1")))
+        except ValueError:
+            await interaction.response.send_message(
+                f"개당 생성 수는 1~{BATCH_MAX_COUNT} 사이 숫자여야 합니다.", ephemeral=True
+            )
+            return
+
+        try:
+            interval = max(
+                BATCH_MIN_INTERVAL,
+                min(BATCH_MAX_INTERVAL, float(self.interval_input.value.strip() or "5")),
+            )
+        except ValueError:
+            await interaction.response.send_message(
+                f"간격은 {BATCH_MIN_INTERVAL:.0f}~{BATCH_MAX_INTERVAL:.0f} 사이 숫자여야 합니다.",
+                ephemeral=True,
+            )
+            return
+
+        use_random = self.random_app_input.value.strip().lower() in ("y", "yes", "true", "1")
+
+        prompts = raw_prompts[:BATCH_MAX_PROMPTS]
+        if not prompts:
+            await interaction.response.send_message("프롬프트를 하나 이상 입력해주세요.", ephemeral=True)
+            return
+
+        capped_notice = ""
+        total = len(prompts) * count
+        if total > BATCH_MAX_TOTAL:
+            count = max(1, BATCH_MAX_TOTAL // len(prompts))
+            total = len(prompts) * count
+            capped_notice = f" (총 {BATCH_MAX_TOTAL}장 초과로 개당 {count}장으로 조정됨)"
+
+        await interaction.response.defer(thinking=True)
+
+        stored = self.cog._get_image_params(self.user_id)
+        pre_positive = stored.get("_pre_positive", "")
+        pre_negative = stored.get("_pre_negative", "")
+        used_model = stored.get("model", "nai-diffusion-4-5")
+        used_action = stored.get("_last_action", "generate")
+        post_negative = stored.get("negative_prompt", "")
+
+        header = (
+            f"배치 시작: {len(prompts)}개 프롬프트 × {count}회 = {total}장"
+            f"  |  간격 {interval:.0f}초  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
+            f"{capped_notice}"
+        )
+        progress_msg = await interaction.followup.send(f"⏳ {header}\n진행: 0 / {total}")
+
+        completed = 0
+        errors = 0
+
+        for pidx, prompt_text in enumerate(prompts):
+            for i in range(count):
+                if use_random:
+                    appearance = generate_appearance(config=stored.get("_random_config"))
+                    stored["_random_appearance"] = appearance
+                    self.cog._save_params()
+                else:
+                    appearance = stored.get("_random_appearance", "")
+
+                used_prompt = ", ".join(p for p in [pre_positive, prompt_text, appearance] if p)
+                api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
+                api_params["n_samples"] = 1
+                combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
+                if combined_negative:
+                    api_params["negative_prompt"] = combined_negative
+                else:
+                    api_params.pop("negative_prompt", None)
+
+                label = f"`{prompt_text[:80]}`" if prompt_text else "(프롬프트 없음)"
+                completed += 1
+
+                try:
+                    images = await novelai_client.generate_image(
+                        input_text=used_prompt,
+                        model=used_model,
+                        action=used_action,
+                        params=api_params,
+                    )
+                    files = [
+                        discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
+                        for j, img in enumerate(images)
+                    ]
+                    await interaction.followup.send(
+                        content=f"**[{completed}/{total}]** {label}",
+                        files=files,
+                    )
+                except Exception as e:
+                    errors += 1
+                    logger.exception(
+                        "nai 배치 오류 | user=%s prompt=%r", self.user_id, prompt_text
+                    )
+                    await interaction.followup.send(
+                        content=f"**[{completed}/{total}]** {label} — 오류: `{e}`",
+                    )
+
+                await progress_msg.edit(
+                    content=f"⏳ {header}\n진행: {completed} / {total}"
+                )
+
+                is_last = pidx == len(prompts) - 1 and i == count - 1
+                if not is_last:
+                    await asyncio.sleep(interval)
+
+        suffix = f" (오류 {errors}건)" if errors else ""
+        await progress_msg.edit(content=f"✅ 배치 완료: {total}장{suffix}")
 
 
 class NovelAICog(commands.Cog):
@@ -445,7 +640,7 @@ class NovelAICog(commands.Cog):
             )
             return
 
-        used_prompt = ", ".join(p for p in [pre_positive, appearance, post_positive] if p)
+        used_prompt = ", ".join(p for p in [pre_positive, post_positive, appearance] if p)
         used_model = model or stored.get("model", "nai-diffusion-4-5")
         used_action = action or stored.get("_last_action", "generate")
 
@@ -480,9 +675,8 @@ class NovelAICog(commands.Cog):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            content = _build_prompt_display(post_positive, post_negative, pre_positive, pre_negative, appearance)
             view = NAIRegenerateView(self, user_id, post_positive, post_negative)
-            message = await interaction.followup.send(content=content or None, files=files, view=view)
+            message = await interaction.followup.send(files=files, view=view)
             view.message = message
         except Exception as e:
             logger.exception(
@@ -547,7 +741,7 @@ class NovelAICog(commands.Cog):
                 await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
                 return
             lines = [f"**{k}:** `{v}`" for k, v in display.items()]
-            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            await send_long(interaction, "\n".join(lines), ephemeral=True)
             return
 
         if key == "clear":
@@ -643,7 +837,8 @@ class NovelAICog(commands.Cog):
         if action == "show" or (positive is None and negative is None):
             pre_pos = stored.get("_pre_positive") or "(없음)"
             pre_neg = stored.get("_pre_negative") or "(없음)"
-            await interaction.response.send_message(
+            await send_long(
+                interaction,
                 f"**선행 포지티브:** {pre_pos}\n**선행 네거티브:** {pre_neg}",
                 ephemeral=True,
             )
@@ -659,7 +854,112 @@ class NovelAICog(commands.Cog):
             lines.append(f"**선행 포지티브:** {positive}")
         if negative is not None:
             lines.append(f"**선행 네거티브:** {negative}")
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+        await send_long(interaction, "\n".join(lines), ephemeral=True)
+
+    @app_commands.command(name="random", description="랜덤 외형 태그를 생성해 후행 프롬프트에 주입합니다.")
+    async def random_appearance(self, interaction: discord.Interaction):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        stored = self._get_image_params(user_id)
+        config = stored.get("_random_config")
+        result = generate_appearance(config=config)
+        stored["_random_appearance"] = result
+        self._save_params()
+        await interaction.response.send_message(
+            f"외형 생성됨 (후행 프롬프트에 주입)\n`{result}`",
+            ephemeral=True,
+        )
+
+    @app_commands.command(name="nai_batch", description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)")
+    async def nai_batch(self, interaction: discord.Interaction):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        await interaction.response.send_modal(NAIBatchModal(self, user_id))
+
+    @app_commands.command(name="random_set", description="랜덤 외형 생성 가중치를 설정·조회·초기화합니다.")
+    @app_commands.describe(
+        key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
+        value="설정할 값 (생략 시 현재 값과 설명 표시, 'clear'로 기본값으로 리셋)",
+    )
+    @app_commands.autocomplete(key=random_key_autocomplete, value=random_value_autocomplete)
+    async def random_set(
+        self,
+        interaction: discord.Interaction,
+        key: Optional[str] = None,
+        value: Optional[str] = None,
+    ):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        stored = self._get_image_params(user_id)
+        config: dict = stored.setdefault("_random_config", {})
+
+        if key is None:
+            lines = []
+            for k, (_, default, desc) in RANDOM_WEIGHT_KEYS.items():
+                cur = config.get(k, default)
+                lines.append(f"**{k}** = `{cur}`  (기본 `{default}`)  — {desc}")
+            await send_long(interaction, "\n".join(lines), ephemeral=True)
+            return
+
+        if key == "clear":
+            stored.pop("_random_config", None)
+            self._save_params()
+            await interaction.response.send_message("랜덤 가중치가 기본값으로 초기화되었습니다.", ephemeral=True)
+            return
+
+        if key not in RANDOM_WEIGHT_KEYS:
+            valid = ", ".join(f"`{k}`" for k in RANDOM_WEIGHT_KEYS)
+            await interaction.response.send_message(
+                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}", ephemeral=True
+            )
+            return
+
+        type_name, default, desc = RANDOM_WEIGHT_KEYS[key]
+
+        if value is None:
+            cur = config.get(key, default)
+            await interaction.response.send_message(
+                f"**{key}** = `{cur}`  (기본 `{default}`)\n{desc}", ephemeral=True
+            )
+            return
+
+        if value == "clear":
+            config.pop(key, None)
+            if not config:
+                stored.pop("_random_config", None)
+            self._save_params()
+            await interaction.response.send_message(
+                f"`{key}` 기본값(`{default}`)으로 리셋되었습니다.", ephemeral=True
+            )
+            return
+
+        try:
+            if type_name == "float":
+                parsed = float(value)
+                if not 0.0 <= parsed <= 1.0:
+                    raise ValueError("0.0~1.0 사이 값이어야 합니다")
+            elif type_name == "bool":
+                if value.lower() in ("true", "1", "yes"):
+                    parsed = True
+                elif value.lower() in ("false", "0", "no"):
+                    parsed = False
+                else:
+                    raise ValueError("true 또는 false 중 하나여야 합니다")
+            elif key == "gender":
+                if value not in ("f", "m"):
+                    raise ValueError("f 또는 m 중 하나여야 합니다")
+                parsed = value
+            else:
+                parsed = value
+        except ValueError as e:
+            await interaction.response.send_message(
+                f"잘못된 값: `{value}`\n오류: {e}\n{desc}", ephemeral=True
+            )
+            return
+
+        config[key] = parsed
+        self._save_params()
+        await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

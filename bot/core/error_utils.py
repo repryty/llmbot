@@ -1,4 +1,21 @@
 import traceback
+import discord
+
+
+async def send_long(
+    interaction: discord.Interaction,
+    text: str,
+    ephemeral: bool = False,
+    chunk_size: int = 1990,
+) -> None:
+    """긴 텍스트를 chunk_size 단위로 잘라 전송한다."""
+    chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)] if text else [""]
+    if len(chunks) == 1:
+        await interaction.response.send_message(chunks[0], ephemeral=ephemeral)
+        return
+    await interaction.response.defer(ephemeral=ephemeral)
+    for chunk in chunks:
+        await interaction.followup.send(chunk, ephemeral=ephemeral)
 
 
 def format_error(e: Exception, **context) -> str:

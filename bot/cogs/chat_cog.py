@@ -9,7 +9,7 @@ from discord import app_commands
 from bot.core.session_manager import session_manager
 from bot.core.ollama_client import ollama_client
 from bot.core.config import settings
-from bot.core.error_utils import format_error
+from bot.core.error_utils import format_error, send_long
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +71,12 @@ def _build_stream_display(
     return (text[:1990] + "...") if len(text) > 1990 else (text or "...")
 
 
+CHUNK_SIZE = 1990
+
+
 async def _split_send(start_msg, text: str, send_fn, edit_fn):
-    """텍스트를 2000자 단위로 분할해 전송한다."""
-    if len(text) <= 2000:
+    """텍스트를 CHUNK_SIZE 단위로 분할해 전송한다."""
+    if len(text) <= CHUNK_SIZE:
         if start_msg is None:
             return await send_fn(text)
         await edit_fn(start_msg, text)
@@ -81,8 +84,8 @@ async def _split_send(start_msg, text: str, send_fn, edit_fn):
 
     chunks = []
     while text:
-        chunks.append(text[:2000])
-        text = text[2000:]
+        chunks.append(text[:CHUNK_SIZE])
+        text = text[CHUNK_SIZE:]
 
     if start_msg is None:
         start_msg = await send_fn(chunks[0])
@@ -157,10 +160,13 @@ class ChatCog(commands.Cog):
                 now = time.monotonic()
                 if now - last_update >= STREAM_UPDATE_INTERVAL:
                     display = _build_stream_display(thinking_parts, content_parts, is_thinking)
-                    if reply_msg is None:
-                        reply_msg = await send_fn(display)
-                    else:
-                        await edit_fn(reply_msg, display)
+                    try:
+                        if reply_msg is None:
+                            reply_msg = await send_fn(display)
+                        else:
+                            await edit_fn(reply_msg, display)
+                    except Exception:
+                        pass
                     last_update = now
 
             full_reply = "".join(content_parts)
@@ -227,7 +233,7 @@ class ChatCog(commands.Cog):
             params["max_tokens"] = max_tokens
 
         async def send_fn(text):
-            return await interaction.followup.send(text)
+            return await interaction.followup.send(text, wait=True)
 
         async def edit_fn(msg, text):
             await msg.edit(content=text)
@@ -408,7 +414,7 @@ class ChatCog(commands.Cog):
                 await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
                 return
             lines = [f"**{k}:** `{v}`" for k, v in current.items()]
-            await interaction.response.send_message("\n".join(lines), ephemeral=True)
+            await send_long(interaction, "\n".join(lines), ephemeral=True)
             return
 
         if key == "clear":

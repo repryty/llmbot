@@ -1,14 +1,20 @@
 {
   "784412272805412895": {
     "model": "nai-diffusion-4-5-full",
-    "_last_prompt": "cat",
+    "_last_prompt": "girl",
     "_last_action": "generate",
-    "width": 1216,
-    "height": 832,
+    "_random_appearance": "grey eyes, long hair, light blue hair, high ponytail, hairband, military uniform, high heel boots, toned, mole",
+    "width": 832,
+    "height": 1216,
     "sampler": "k_euler_ancestral",
     "noise_schedule": "karras",
     "steps": 28,
     "scale": 5,
-    "cfg_rescale": 0
+    "cfg_rescale": 0,
+    "_pre_positive": "0.5:🧑‍🎨miria(mamamamave)::, 0.4:🧑‍🎨hassai::, 1.2:🧑‍🎨hh::, artist:kohakurinne, 0.9:🧑‍🎨channel(caststation)::, 1.1:🧑‍🎨shinkaiobake::, 0.4:🧑‍🎨honyang::, 0.3:🧑‍🎨ausonlee::, 0.6:🧑‍🎨komugi(2212)::, artist:date_shichuan_majiang, artist:fenrir(fenriluuu), artist:glyphsss, newest, year 2025, year 2024, -3::artist collaboration::, -2::simple illustration, oekaki, multiple shots, unfinished, blurry, dead eyes, blank eyes::, dot nose, 2.45::official style, pixiv commission::, perfect anatomy, commission, highly finished, amazing quality, top aesthetic, masterpiece, very aesthetic, -1::blush, shy, heart, sweat, motion line::, -0.7:😄:, absurdres, highres, best quality, best illustration, beautiful eyes,",
+    "_pre_negative": "blurry, lowres, error, film grain, scan artifacts, worst quality, bad quality, jpeg artifacts, very displeasing, chromatic aberration, multiple views, logo, too many watermarks, lowres, {bad}, error, fewer, extra, missing, worst quality, jpeg artifacts, bad quality, watermark, unfinished, displeasing, chromatic aberration, signature, extra digits, artistic error, username, scan, [abstract], normal quality, bad quality, low quality, worst quality, lowres, displeasing, very displeasing, {bad}, bad anatomy, bad hands, text, error, missing, missing finger, extra, extra digits, fewer, fewer digits, cropped, JPEG artifacts, signature, watermark, username, blurry, artist name, bad face, fat, duplicate, mutation, deformed, disfigured, extra arms, extra legs, long neck, bad feet, bad proportions, extra, fewer, unfinished, chromatic aberration, scan, scan artifacts, muscular female, monochrome, glasses, head out of frame nostrils, lips, {hands on own chest, hand on breast}, no pupils, white pupils, snake head, snake tail, open shirt, breasts grab, opening eyes, tight clothes, squeezing, wet clothes, see-through, popped button, ponytail, twintails, tied hair, braid, side ponytail, asymmetrical hair, chinese clothes, ear piercing, choker, grey background, shirt lift, mole, hand in own hair, braid, tied hair, ribbon, sleeves rolled up, opening eyes, tie clip, glowing eyes, hime cut, belt, long sideburns, tied hair, ponytail, side ponytail, hair flowing over, short sleeves, touching breast, touching necktie, breast press, cropped jacket, crop top, loli, sitting, forehead jewel, forehead mark, blue hair, close-up, leaning forward, nostril, horse ears, blush",
+    "_random_config": {
+      "p_skin": 0.0
+    }
   }
 }
