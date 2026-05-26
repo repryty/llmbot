@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import re
 import logging
 from pathlib import Path
 from typing import Optional
@@ -146,6 +147,16 @@ RANDOM_WEIGHT_KEYS: dict[str, tuple] = {
 }
 
 
+def _parse_prompt_line(line: str) -> tuple[str, int]:
+    """'텍스트 x N' → (텍스트, N). 숫자만 → ("", N). 그 외 → (텍스트, 1)."""
+    m = re.match(r'^(.*?)\s+[xX]\s+(\d+)\s*$', line)
+    if m:
+        return m.group(1).strip(), max(1, int(m.group(2)))
+    if re.fullmatch(r'\d+', line.strip()):
+        return "", max(1, int(line.strip()))
+    return line.strip(), 1
+
+
 async def random_key_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -265,7 +276,8 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
         stored["_pre_negative"] = new_pre_neg
         self.cog._save_params()
 
-        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt, appearance] if p)
+        trailing_positive = appearance if appearance else new_prompt
+        used_prompt = ", ".join(p for p in [new_pre_pos, trailing_positive] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [new_pre_neg, new_negative] if p)
         if combined_negative:
@@ -367,7 +379,7 @@ class NAIRegenerateView(ui.View):
         used_model = stored.get("model", "nai-diffusion-4-5")
         used_action = stored.get("_last_action", "generate")
 
-        used_prompt = ", ".join(p for p in [pre_pos, last_prompt, new_appearance] if p)
+        used_prompt = ", ".join(p for p in [pre_pos, new_appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [pre_neg, post_negative] if p)
         if combined_negative:
@@ -412,27 +424,17 @@ class NAIRegenerateView(ui.View):
             )
 
 
-BATCH_MAX_PROMPTS = 5
-BATCH_MAX_COUNT = 4
-BATCH_MAX_TOTAL = 10
 BATCH_MIN_INTERVAL = 3.0
 BATCH_MAX_INTERVAL = 60.0
 
 
 class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
     prompts_input = ui.TextInput(
-        label="프롬프트 목록 (줄바꿈으로 구분, 최대 5개)",
+        label="프롬프트 목록 ('텍스트 x N' 형식 / 랜덤: 숫자만)",
         style=discord.TextStyle.paragraph,
         max_length=2000,
         required=True,
-        placeholder="red hair, 1girl\nblue hair, 1girl",
-    )
-    count_input = ui.TextInput(
-        label=f"개당 생성 수 (1~{BATCH_MAX_COUNT})",
-        style=discord.TextStyle.short,
-        max_length=1,
-        required=False,
-        default="1",
+        placeholder="red hair, 1girl x 5\nblue hair, 1girl x 3\n(랜덤 외형 ON이면 숫자만: 10)",
     )
     interval_input = ui.TextInput(
         label="호출 간격 (초, 3~60)",
@@ -455,16 +457,6 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         self.user_id = user_id
 
     async def on_submit(self, interaction: discord.Interaction):
-        raw_prompts = [p.strip() for p in self.prompts_input.value.splitlines() if p.strip()]
-
-        try:
-            count = max(1, min(BATCH_MAX_COUNT, int(self.count_input.value.strip() or "1")))
-        except ValueError:
-            await interaction.response.send_message(
-                f"개당 생성 수는 1~{BATCH_MAX_COUNT} 사이 숫자여야 합니다.", ephemeral=True
-            )
-            return
-
         try:
             interval = max(
                 BATCH_MIN_INTERVAL,
@@ -479,18 +471,28 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
 
         use_random = self.random_app_input.value.strip().lower() in ("y", "yes", "true", "1")
 
-        prompts = raw_prompts[:BATCH_MAX_PROMPTS]
-        if not prompts:
-            await interaction.response.send_message("프롬프트를 하나 이상 입력해주세요.", ephemeral=True)
+        raw_lines = [l.strip() for l in self.prompts_input.value.splitlines() if l.strip()]
+        if not raw_lines:
+            await interaction.response.send_message("내용을 입력해주세요.", ephemeral=True)
             return
 
-        capped_notice = ""
-        total = len(prompts) * count
-        if total > BATCH_MAX_TOTAL:
-            count = max(1, BATCH_MAX_TOTAL // len(prompts))
-            total = len(prompts) * count
-            capped_notice = f" (총 {BATCH_MAX_TOTAL}장 초과로 개당 {count}장으로 조정됨)"
+        # jobs: list of (trailing_prompt_or_empty, repeat_count)
+        jobs: list[tuple[str, int]] = []
+        for line in raw_lines:
+            text, count = _parse_prompt_line(line)
+            if use_random:
+                jobs.append(("", count))
+            else:
+                if text:
+                    jobs.append((text, count))
 
+        if not jobs:
+            await interaction.response.send_message(
+                "유효한 프롬프트를 입력해주세요. (랜덤 외형 OFF 시 텍스트 필요)", ephemeral=True
+            )
+            return
+
+        total = sum(c for _, c in jobs)
         await interaction.response.defer(thinking=True)
 
         stored = self.cog._get_image_params(self.user_id)
@@ -501,67 +503,63 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         post_negative = stored.get("negative_prompt", "")
 
         header = (
-            f"배치 시작: {len(prompts)}개 프롬프트 × {count}회 = {total}장"
-            f"  |  간격 {interval:.0f}초  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
-            f"{capped_notice}"
+            f"배치 시작: {total}장"
+            f"  |  간격 {interval:.0f}초"
+            f"  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
         )
         progress_msg = await interaction.followup.send(f"⏳ {header}\n진행: 0 / {total}")
 
         completed = 0
         errors = 0
+        job_list = [(text, i) for text, count in jobs for i in range(count)]
 
-        for pidx, prompt_text in enumerate(prompts):
-            for i in range(count):
-                if use_random:
-                    appearance = generate_appearance(config=stored.get("_random_config"))
-                    stored["_random_appearance"] = appearance
-                    self.cog._save_params()
-                else:
-                    appearance = stored.get("_random_appearance", "")
+        for idx, (prompt_text, _) in enumerate(job_list):
+            if use_random:
+                trailing = generate_appearance(config=stored.get("_random_config"))
+                stored["_random_appearance"] = trailing
+                self.cog._save_params()
+            else:
+                trailing = prompt_text
 
-                used_prompt = ", ".join(p for p in [pre_positive, prompt_text, appearance] if p)
-                api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
-                api_params["n_samples"] = 1
-                combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
-                if combined_negative:
-                    api_params["negative_prompt"] = combined_negative
-                else:
-                    api_params.pop("negative_prompt", None)
+            used_prompt = ", ".join(p for p in [pre_positive, trailing] if p)
+            api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
+            api_params["n_samples"] = 1
+            api_params["seed"] = 0
+            combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
+            if combined_negative:
+                api_params["negative_prompt"] = combined_negative
+            else:
+                api_params.pop("negative_prompt", None)
 
-                label = f"`{prompt_text[:80]}`" if prompt_text else "(프롬프트 없음)"
-                completed += 1
+            label = f"`{trailing[:80]}`" if trailing else "(없음)"
+            completed += 1
 
-                try:
-                    images = await novelai_client.generate_image(
-                        input_text=used_prompt,
-                        model=used_model,
-                        action=used_action,
-                        params=api_params,
-                    )
-                    files = [
-                        discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
-                        for j, img in enumerate(images)
-                    ]
-                    await interaction.followup.send(
-                        content=f"**[{completed}/{total}]** {label}",
-                        files=files,
-                    )
-                except Exception as e:
-                    errors += 1
-                    logger.exception(
-                        "nai 배치 오류 | user=%s prompt=%r", self.user_id, prompt_text
-                    )
-                    await interaction.followup.send(
-                        content=f"**[{completed}/{total}]** {label} — 오류: `{e}`",
-                    )
-
-                await progress_msg.edit(
-                    content=f"⏳ {header}\n진행: {completed} / {total}"
+            try:
+                images = await novelai_client.generate_image(
+                    input_text=used_prompt,
+                    model=used_model,
+                    action=used_action,
+                    params=api_params,
+                )
+                files = [
+                    discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
+                    for j, img in enumerate(images)
+                ]
+                await interaction.followup.send(
+                    content=f"**[{completed}/{total}]** {label}",
+                    files=files,
+                )
+            except Exception as e:
+                errors += 1
+                logger.exception("nai 배치 오류 | user=%s trailing=%r", self.user_id, trailing)
+                await interaction.followup.send(
+                    content=f"**[{completed}/{total}]** {label} — 오류: `{e}`",
                 )
 
-                is_last = pidx == len(prompts) - 1 and i == count - 1
-                if not is_last:
-                    await asyncio.sleep(interval)
+            await progress_msg.edit(content=f"⏳ {header}\n진행: {completed} / {total}")
+
+            if idx < len(job_list) - 1:
+                await asyncio.sleep(interval)
 
         suffix = f" (오류 {errors}건)" if errors else ""
         await progress_msg.edit(content=f"✅ 배치 완료: {total}장{suffix}")
@@ -640,7 +638,8 @@ class NovelAICog(commands.Cog):
             )
             return
 
-        used_prompt = ", ".join(p for p in [pre_positive, post_positive, appearance] if p)
+        trailing_positive = appearance if appearance else post_positive
+        used_prompt = ", ".join(p for p in [pre_positive, trailing_positive] if p)
         used_model = model or stored.get("model", "nai-diffusion-4-5")
         used_action = action or stored.get("_last_action", "generate")
 
