@@ -199,8 +199,7 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
             view = NAIRegenerateView(self.cog, self.user_id, new_prompt, new_negative)
             await self.message.edit(
                 content=f"**프롬프트:** `{new_prompt}`\n**네거티브:** `{new_negative or '(없음)'}`",
-                attachments=[],
-                files=files,
+                attachments=files,
                 view=view,
             )
             view.message = self.message
