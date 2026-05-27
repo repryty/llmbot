@@ -1,5 +1,4 @@
 import traceback
-from collections import deque
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -21,11 +20,23 @@ class AdminCog(commands.Cog):
             raise app_commands.CheckFailure("이 명령어를 사용할 권한이 없습니다.")
 
     def _tail_log_lines(self, line_count: int) -> list[str]:
-        lines = deque(maxlen=line_count)
-        with LOG_FILE.open("r", encoding="utf-8", errors="replace") as log_file:
-            for line in log_file:
-                lines.append(line.rstrip("\n"))
-        return list(lines)
+        if line_count <= 0:
+            return []
+        with LOG_FILE.open("rb") as log_file:
+            log_file.seek(0, 2)
+            position = log_file.tell()
+            buffer = bytearray()
+            chunk_size = 1024
+            while position > 0 and buffer.count(b"\n") <= line_count:
+                read_size = min(chunk_size, position)
+                position -= read_size
+                log_file.seek(position)
+                chunk = log_file.read(read_size)
+                buffer[:0] = chunk
+                if position == 0:
+                    break
+        text = buffer.decode("utf-8", errors="replace")
+        return text.splitlines()[-line_count:]
 
     async def _send_log_lines(self, interaction: discord.Interaction, lines: list[str]) -> None:
         chunks: list[str] = []
@@ -72,6 +83,9 @@ class AdminCog(commands.Cog):
     @app_commands.describe(lines="가져올 마지막 줄 수 (기본 200, 최대 1000)")
     async def logs(self, interaction: discord.Interaction, lines: int = 200):
         self._check_whitelist(interaction)
+        if lines <= 0:
+            await interaction.response.send_message("줄 수는 1 이상이어야 합니다.", ephemeral=True)
+            return
         notice = None
         if lines > MAX_LOG_LINES:
             notice = f"[notice] 요청한 줄 수가 최대치({MAX_LOG_LINES})로 제한되었습니다."
