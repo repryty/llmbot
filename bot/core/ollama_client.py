@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Any, AsyncGenerator, Optional
 import openai
 from bot.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaClient:
@@ -22,6 +25,11 @@ class OllamaClient:
             "messages": messages,
             **params,
         }
+        logger.info(
+            "Ollama chat request base_url=%s payload=%s",
+            settings.OLLAMA_BASE_URL,
+            json.dumps(payload, ensure_ascii=False),
+        )
         response = await self.client.chat.completions.create(**payload)
         return response.choices[0].message.content or ""
 
@@ -38,6 +46,11 @@ class OllamaClient:
             "stream": True,
             **params,
         }
+        logger.info(
+            "Ollama chat stream request base_url=%s payload=%s",
+            settings.OLLAMA_BASE_URL,
+            json.dumps(payload, ensure_ascii=False),
+        )
         stream = await self.client.chat.completions.create(**payload)
         in_think = False
         async for chunk in stream:

@@ -4,11 +4,9 @@ import discord
 from discord.ext import commands
 
 from bot.core.config import settings
+from bot.core.logging_config import configure_logging
 
-logging.basicConfig(
-    level=logging.ERROR,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 intents = discord.Intents.default()
