@@ -49,7 +49,7 @@ IMAGE_PRESETS = {
 # _last_prompt, _last_action : 내부 추적용 (API에 전달하지 않음)
 # model                      : API 최상위 필드 (parameters 안에 들어가지 않음)
 # _pre_positive, _pre_negative : 선행 프롬프트 (그림체 프리셋 저장용)
-# _random_appearance         : 랜덤 외형 태그 (후행 프롬프트로 주입)
+# _random_appearance         : 구버전 호환용 (더 이상 사용하지 않음, API 전달 방지용으로만 유지)
 # _random_config             : 랜덤 생성 가중치 설정
 _INTERNAL_KEYS = {
     "_last_prompt", "_last_action", "model",
@@ -266,7 +266,6 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
         new_pre_neg = self.pre_negative.value or ""
 
         stored = self.cog._get_image_params(self.user_id)
-        appearance = stored.get("_random_appearance", "")
         used_model = stored.get("model", "nai-diffusion-4-5")
         used_action = stored.get("_last_action", "generate")
 
@@ -276,7 +275,7 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
         stored["_pre_negative"] = new_pre_neg
         self.cog._save_params()
 
-        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt, appearance] if p)
+        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [new_pre_neg, new_negative] if p)
         if combined_negative:
@@ -368,17 +367,16 @@ class NAIRegenerateView(ui.View):
 
         stored = self.cog._get_image_params(self.user_id)
         new_appearance = generate_appearance(config=stored.get("_random_config"))
-        stored["_random_appearance"] = new_appearance
+        stored["_last_prompt"] = new_appearance
         self.cog._save_params()
 
         pre_pos = stored.get("_pre_positive", "")
         pre_neg = stored.get("_pre_negative", "")
-        last_prompt = stored.get("_last_prompt", "")
         post_negative = stored.get("negative_prompt", "")
         used_model = stored.get("model", "nai-diffusion-4-5")
         used_action = stored.get("_last_action", "generate")
 
-        used_prompt = ", ".join(p for p in [pre_pos, last_prompt, new_appearance] if p)
+        used_prompt = ", ".join(p for p in [pre_pos, new_appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [pre_neg, post_negative] if p)
         if combined_negative:
@@ -402,7 +400,7 @@ class NAIRegenerateView(ui.View):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            view = NAIRegenerateView(self.cog, self.user_id, last_prompt, post_negative)
+            view = NAIRegenerateView(self.cog, self.user_id, new_appearance, post_negative)
             await target.edit(content=None, attachments=files, view=view)
             view.message = target
         except Exception as e:
@@ -515,7 +513,7 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         for idx, (prompt_text, _) in enumerate(job_list):
             if use_random:
                 trailing = generate_appearance(config=stored.get("_random_config"))
-                stored["_random_appearance"] = trailing
+                stored["_last_prompt"] = trailing
                 self.cog._save_params()
             else:
                 trailing = prompt_text
@@ -627,17 +625,16 @@ class NovelAICog(commands.Cog):
 
         pre_positive = stored.get("_pre_positive", "")
         pre_negative = stored.get("_pre_negative", "")
-        appearance = stored.get("_random_appearance", "")
 
         post_positive = prompt or stored.get("_last_prompt", "")
 
-        if not post_positive and not pre_positive and not appearance:
+        if not post_positive and not pre_positive:
             await interaction.followup.send(
                 "프롬프트를 입력하거나 먼저 한 번 이상 사용해야 합니다.", ephemeral=True
             )
             return
 
-        used_prompt = ", ".join(p for p in [pre_positive, post_positive, appearance] if p)
+        used_prompt = ", ".join(p for p in [pre_positive, post_positive] if p)
         used_model = model or stored.get("model", "nai-diffusion-4-5")
         used_action = action or stored.get("_last_action", "generate")
 
@@ -860,10 +857,10 @@ class NovelAICog(commands.Cog):
         stored = self._get_image_params(user_id)
         config = stored.get("_random_config")
         result = generate_appearance(config=config)
-        stored["_random_appearance"] = result
+        stored["_last_prompt"] = result
         self._save_params()
         await interaction.response.send_message(
-            f"외형 생성됨 (후행 프롬프트에 주입)\n`{result}`",
+            f"외형 생성됨 (포지티브 프롬프트에 저장)\n`{result}`",
             ephemeral=True,
         )
 
