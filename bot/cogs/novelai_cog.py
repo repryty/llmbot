@@ -3,8 +3,10 @@ import io
 import json
 import re
 import logging
+import zipfile
 from pathlib import Path
 from typing import Optional
+import httpx
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
@@ -1066,6 +1068,47 @@ class NovelAICog(commands.Cog):
         config[key] = parsed
         self._save_params()
         await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
+
+
+    @app_commands.command(name="nai_zip", description="채널의 최근 n개 이미지를 zip으로 묶어 보냅니다.")
+    @app_commands.describe(n="가져올 이미지 개수 (기본 10, 최대 100)")
+    async def nai_zip(self, interaction: discord.Interaction, n: Optional[int] = 10):
+        self._check_whitelist(interaction)
+        n = max(1, min(100, n or 10))
+        await interaction.response.defer(thinking=True)
+
+        channel = interaction.channel
+        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.DMChannel)):
+            await interaction.followup.send("이 채널에서는 메세지 히스토리를 조회할 수 없습니다.", ephemeral=True)
+            return
+
+        collected: list[tuple[str, str]] = []  # (url, filename)
+        async for msg in channel.history(limit=500):
+            for att in msg.attachments:
+                if att.filename.lower().endswith(".png"):
+                    collected.append((att.url, att.filename))
+                    if len(collected) >= n:
+                        break
+            if len(collected) >= n:
+                break
+
+        if not collected:
+            await interaction.followup.send("최근 메세지에서 PNG 이미지를 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        buf = io.BytesIO()
+        async with httpx.AsyncClient() as client:
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for idx, (url, filename) in enumerate(collected):
+                    resp = await client.get(url, timeout=30.0)
+                    resp.raise_for_status()
+                    zf.writestr(f"{idx + 1:03d}_{filename}", resp.content)
+        buf.seek(0)
+
+        await interaction.followup.send(
+            f"최근 {len(collected)}개 이미지",
+            file=discord.File(buf, filename="images.zip"),
+        )
 
 
 async def setup(bot: commands.Bot):
