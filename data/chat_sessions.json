@@ -14,5 +14,10 @@
       "model": "deepseek-v4-pro"
     },
     "system_prompt": null
+  },
+  "test_user_999": {
+    "messages": [],
+    "params": {},
+    "system_prompt": "당신은 친절한 AI입니다."
   }
 }

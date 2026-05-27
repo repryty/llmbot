@@ -528,7 +528,7 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
             else:
                 api_params.pop("negative_prompt", None)
 
-            label = f"`{trailing[:80]}`" if trailing else "(없음)"
+            label = f"`{trailing}`" if trailing else "(없음)"
             completed += 1
 
             try:
@@ -542,15 +542,23 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
                     discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
                     for j, img in enumerate(images)
                 ]
+                prefix = f"**[{completed}/{total}]** "
+                msg_content = prefix + label
+                if len(msg_content) > 2000:
+                    msg_content = prefix + f"`{trailing[:2000 - len(prefix) - 4]}...`"
                 await interaction.followup.send(
-                    content=f"**[{completed}/{total}]** {label}",
+                    content=msg_content,
                     files=files,
                 )
             except Exception as e:
                 errors += 1
                 logger.exception("nai 배치 오류 | user=%s trailing=%r", self.user_id, trailing)
+                err_prefix = f"**[{completed}/{total}]** "
+                err_content = err_prefix + label + f" — 오류: `{e}`"
+                if len(err_content) > 2000:
+                    err_content = err_prefix + f"`{trailing[:2000 - len(err_prefix) - 4]}...`" + f" — 오류: `{e}`"
                 await interaction.followup.send(
-                    content=f"**[{completed}/{total}]** {label} — 오류: `{e}`",
+                    content=err_content,
                 )
 
             await progress_msg.edit(content=f"⏳ {header}\n진행: {completed} / {total}")
@@ -670,7 +678,8 @@ class NovelAICog(commands.Cog):
                 for i, img in enumerate(images)
             ]
             view = NAIRegenerateView(self, user_id, post_positive, post_negative)
-            message = await interaction.followup.send(files=files, view=view)
+            content = f"`{post_positive}`" if post_positive else None
+            message = await interaction.followup.send(content=content, files=files, view=view)
             view.message = message
         except Exception as e:
             logger.exception(
@@ -863,6 +872,26 @@ class NovelAICog(commands.Cog):
             f"외형 생성됨 (포지티브 프롬프트에 저장)\n`{result}`",
             ephemeral=True,
         )
+
+    @app_commands.command(name="nai_prompt", description="현재 저장된 프롬프트를 열람합니다.")
+    async def nai_prompt(self, interaction: discord.Interaction):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        stored = self._get_image_params(user_id)
+
+        pre_pos = stored.get("_pre_positive") or "(없음)"
+        last_pos = stored.get("_last_prompt") or "(없음)"
+        pre_neg = stored.get("_pre_negative") or "(없음)"
+        last_neg = stored.get("negative_prompt") or "(없음)"
+
+        lines = [
+            "**📝 저장된 프롬프트**",
+            f"**선행 포지티브:**\n{pre_pos}",
+            f"**후행 포지티브 (마지막 사용):**\n{last_pos}",
+            f"**선행 네거티브:**\n{pre_neg}",
+            f"**후행 네거티브:**\n{last_neg}",
+        ]
+        await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
     @app_commands.command(name="nai_batch", description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)")
     async def nai_batch(self, interaction: discord.Interaction):
