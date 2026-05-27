@@ -5,7 +5,7 @@ from pathlib import Path
 LOG_DIR = Path("data/logs")
 LOG_FILE = LOG_DIR / "bot.log"
 LOG_MAX_BYTES = 5 * 1024 * 1024
-LOG_BACKUP_COUNT = 1
+LOG_BACKUP_COUNT = 3
 
 
 def configure_logging(level: int = logging.INFO) -> None:

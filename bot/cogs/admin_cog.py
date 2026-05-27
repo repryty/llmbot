@@ -1,4 +1,5 @@
 import traceback
+from collections import deque
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -6,7 +7,8 @@ from discord import app_commands
 from bot.core.config import settings
 from bot.core.logging_config import LOG_FILE
 
-LOG_CHUNK_LIMIT = 1800
+DISCORD_MESSAGE_LIMIT = 2000
+LOG_CHUNK_LIMIT = DISCORD_MESSAGE_LIMIT - 200
 MAX_LOG_LINES = 1000
 
 
@@ -17,6 +19,13 @@ class AdminCog(commands.Cog):
     def _check_whitelist(self, interaction: discord.Interaction) -> None:
         if interaction.user.id not in settings.whitelist_ids:
             raise app_commands.CheckFailure("이 명령어를 사용할 권한이 없습니다.")
+
+    def _tail_log_lines(self, line_count: int) -> list[str]:
+        lines = deque(maxlen=line_count)
+        with LOG_FILE.open("r", encoding="utf-8", errors="replace") as log_file:
+            for line in log_file:
+                lines.append(line.rstrip("\n"))
+        return list(lines)
 
     async def _send_log_lines(self, interaction: discord.Interaction, lines: list[str]) -> None:
         chunks: list[str] = []
@@ -69,15 +78,13 @@ class AdminCog(commands.Cog):
             await interaction.response.send_message("로그 파일이 없습니다.", ephemeral=True)
             return
         try:
-            content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+            recent_lines = self._tail_log_lines(safe_lines)
         except Exception as e:
             await interaction.response.send_message(f"로그 읽기 실패: {e}", ephemeral=True)
             return
-        if not content.strip():
+        if not recent_lines:
             await interaction.response.send_message("로그가 비어 있습니다.", ephemeral=True)
             return
-        all_lines = content.splitlines()
-        recent_lines = all_lines[-safe_lines:]
         await self._send_log_lines(interaction, recent_lines)
 
 
