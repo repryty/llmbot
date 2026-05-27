@@ -3,6 +3,7 @@ import io
 import json
 import re
 import logging
+import unicodedata
 from pathlib import Path
 from typing import Optional
 import discord
@@ -45,6 +46,23 @@ IMAGE_PRESETS = {
         "cfg_rescale": 0,
     },
 }
+
+_CUSTOM_EMOJI_RE = re.compile(r"<a?:(?P<name>[A-Za-z0-9_]+):\d+>")
+_UNICODE_EMOJI_RE = re.compile(
+    "["
+    "\U0001F1E6-\U0001F1FF"  # flags
+    "\U0001F300-\U0001F5FF"  # symbols & pictographs
+    "\U0001F600-\U0001F64F"  # emoticons
+    "\U0001F680-\U0001F6FF"  # transport & map
+    "\U0001F700-\U0001F77F"  # alchemical
+    "\U0001F780-\U0001F7FF"  # geometric
+    "\U0001F800-\U0001F8FF"  # supplemental arrows
+    "\U0001F900-\U0001F9FF"  # supplemental symbols & pictographs
+    "\U0001FA00-\U0001FAFF"  # symbols & pictographs extended-a
+    "\U00002600-\U000026FF"  # misc symbols
+    "\U00002700-\U000027BF"  # dingbats
+    "]"
+)
 
 # _last_prompt, _last_action : 내부 추적용 (API에 전달하지 않음)
 # model                      : API 최상위 필드 (parameters 안에 들어가지 않음)
@@ -157,6 +175,21 @@ def _parse_prompt_line(line: str) -> tuple[str, int]:
     return line.strip(), 1
 
 
+def _unicode_emoji_to_shortcode(emoji_char: str) -> str:
+    name = unicodedata.name(emoji_char, "")
+    if not name:
+        return emoji_char
+    return f":{name.lower().replace(' ', '_')}:"
+
+
+def _restore_prompt_emojis(text: str) -> str:
+    if not text:
+        return text
+    restored = _CUSTOM_EMOJI_RE.sub(r":\g<name>:", text)
+    restored = _UNICODE_EMOJI_RE.sub(lambda m: _unicode_emoji_to_shortcode(m.group(0)), restored)
+    return restored.replace("\ufe0f", "").replace("\u200d", "")
+
+
 async def random_key_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -260,10 +293,10 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        new_prompt = self.prompt.value
-        new_negative = self.negative_prompt.value or ""
-        new_pre_pos = self.pre_positive.value or ""
-        new_pre_neg = self.pre_negative.value or ""
+        new_prompt = _restore_prompt_emojis(self.prompt.value)
+        new_negative = _restore_prompt_emojis(self.negative_prompt.value or "")
+        new_pre_pos = _restore_prompt_emojis(self.pre_positive.value or "")
+        new_pre_neg = _restore_prompt_emojis(self.pre_negative.value or "")
 
         stored = self.cog._get_image_params(self.user_id)
         used_model = stored.get("model", "nai-diffusion-4-5")
@@ -477,6 +510,7 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         jobs: list[tuple[str, int]] = []
         for line in raw_lines:
             text, count = _parse_prompt_line(line)
+            text = _restore_prompt_emojis(text)
             if use_random:
                 jobs.append(("", count))
             else:
@@ -634,7 +668,7 @@ class NovelAICog(commands.Cog):
         pre_positive = stored.get("_pre_positive", "")
         pre_negative = stored.get("_pre_negative", "")
 
-        post_positive = prompt or stored.get("_last_prompt", "")
+        post_positive = _restore_prompt_emojis(prompt) if prompt else stored.get("_last_prompt", "")
 
         if not post_positive and not pre_positive:
             await interaction.followup.send(
@@ -647,7 +681,7 @@ class NovelAICog(commands.Cog):
         used_action = action or stored.get("_last_action", "generate")
 
         if negative_prompt is not None:
-            stored["negative_prompt"] = negative_prompt
+            stored["negative_prompt"] = _restore_prompt_emojis(negative_prompt)
 
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
 
@@ -783,7 +817,7 @@ class NovelAICog(commands.Cog):
         type_name = IMAGE_PARAM_TYPES[key]
         try:
             if type_name == "str":
-                parsed = value
+                parsed = _restore_prompt_emojis(value) if key == "negative_prompt" else value
             elif type_name == "int":
                 parsed = int(value)
             elif type_name == "float":
@@ -848,9 +882,9 @@ class NovelAICog(commands.Cog):
             return
 
         if positive is not None:
-            stored["_pre_positive"] = positive
+            stored["_pre_positive"] = _restore_prompt_emojis(positive)
         if negative is not None:
-            stored["_pre_negative"] = negative
+            stored["_pre_negative"] = _restore_prompt_emojis(negative)
         self._save_params()
         lines = []
         if positive is not None:
