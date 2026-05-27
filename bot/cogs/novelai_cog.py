@@ -149,7 +149,7 @@ RANDOM_WEIGHT_KEYS: dict[str, tuple] = {
 
 def _parse_prompt_line(line: str) -> tuple[str, int]:
     """'텍스트 x N' → (텍스트, N). 숫자만 → ("", N). 그 외 → (텍스트, 1)."""
-    m = re.match(r'^(.*?)\s+[xX]\s+(\d+)\s*$', line)
+    m = re.match(r'^(.*?)\s+(?:[xX×✕✖❌❎])\uFE0F?\s+(\d+)\s*$', line)
     if m:
         return m.group(1).strip(), max(1, int(m.group(2)))
     if re.fullmatch(r'\d+', line.strip()):
