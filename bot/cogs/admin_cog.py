@@ -27,12 +27,14 @@ class AdminCog(commands.Cog):
             position = log_file.tell()
             buffer = bytearray()
             chunk_size = 1024
-            while position > 0 and buffer.count(b"\n") <= line_count:
+            newline_count = 0
+            while position > 0 and newline_count <= line_count:
                 read_size = min(chunk_size, position)
                 position -= read_size
                 log_file.seek(position)
                 chunk = log_file.read(read_size)
                 buffer[:0] = chunk
+                newline_count += chunk.count(b"\n")
                 if position == 0:
                     break
         text = buffer.decode("utf-8", errors="replace")
@@ -89,7 +91,7 @@ class AdminCog(commands.Cog):
         notice = None
         if lines > MAX_LOG_LINES:
             notice = f"[notice] 요청한 줄 수가 최대치({MAX_LOG_LINES})로 제한되었습니다."
-        safe_lines = max(1, min(lines, MAX_LOG_LINES))
+        safe_lines = min(lines, MAX_LOG_LINES)
         if not LOG_FILE.exists():
             await interaction.response.send_message("로그 파일이 없습니다.", ephemeral=True)
             return
