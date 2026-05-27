@@ -1,10 +1,13 @@
 import json
 import io
+import logging
 import zipfile
 from typing import Any, Optional
 from urllib.parse import urlparse
 import httpx
 from bot.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _V4_MODELS = {
     "nai-diffusion-4",
@@ -81,6 +84,11 @@ class NovelAIClient:
             "model": model,
             "parameters": params or {},
         }
+        logger.info(
+            "NovelAI text request url=%s payload=%s",
+            url,
+            json.dumps(payload, ensure_ascii=False),
+        )
         chunks = []
         async with httpx.AsyncClient() as client:
             async with client.stream("POST", url, json=payload, headers=self.headers, timeout=120.0) as resp:
@@ -119,6 +127,11 @@ class NovelAIClient:
             "action": action,
             "parameters": parameters,
         }
+        logger.info(
+            "NovelAI image request url=%s payload=%s",
+            url,
+            json.dumps(payload, ensure_ascii=False),
+        )
         images = []
         async with httpx.AsyncClient() as client:
             resp = await client.post(url, json=payload, headers=self.headers, timeout=120.0)
