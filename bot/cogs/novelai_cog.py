@@ -276,8 +276,7 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
         stored["_pre_negative"] = new_pre_neg
         self.cog._save_params()
 
-        trailing_positive = appearance if appearance else new_prompt
-        used_prompt = ", ".join(p for p in [new_pre_pos, trailing_positive] if p)
+        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt, appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [new_pre_neg, new_negative] if p)
         if combined_negative:
@@ -379,7 +378,7 @@ class NAIRegenerateView(ui.View):
         used_model = stored.get("model", "nai-diffusion-4-5")
         used_action = stored.get("_last_action", "generate")
 
-        used_prompt = ", ".join(p for p in [pre_pos, new_appearance] if p)
+        used_prompt = ", ".join(p for p in [pre_pos, last_prompt, new_appearance] if p)
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
         combined_negative = ", ".join(p for p in [pre_neg, post_negative] if p)
         if combined_negative:
@@ -638,8 +637,7 @@ class NovelAICog(commands.Cog):
             )
             return
 
-        trailing_positive = appearance if appearance else post_positive
-        used_prompt = ", ".join(p for p in [pre_positive, trailing_positive] if p)
+        used_prompt = ", ".join(p for p in [pre_positive, post_positive, appearance] if p)
         used_model = model or stored.get("model", "nai-diffusion-4-5")
         used_action = action or stored.get("_last_action", "generate")
 
