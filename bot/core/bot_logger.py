@@ -1,8 +1,14 @@
 """중앙 로깅 모듈.
 
-- 로그 파일: data/bot.log (최대 5 MB, 백업 2개 → 최대 15 MB)
-- API 전용 로거: logging.getLogger("api.request")
-- 헬퍼: log_api_request(), get_recent_logs()
+파일: data/bot.log (최대 5 MB, 백업 2개)
+
+모드 전환
+---------
+- 일반 모드(기본): api.request 로거 레코드만 파일에 기록
+                   → Ollama / NovelAI 호출 내역만 저장
+- 디버그 모드     : 모든 레코드(discord.*, bot.* 포함) 파일에 기록
+
+set_debug_mode(True/False) 또는 환경변수 LOG_DEBUG=true 로 제어.
 """
 
 import json
@@ -23,16 +29,55 @@ BACKUP_COUNT = 2              # bot.log.1, bot.log.2 까지 보관
 _FMT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 
+# ── 디버그 모드 상태 ──────────────────────────────────────────────────────────
+_debug_mode: bool = os.getenv("LOG_DEBUG", "").lower() in ("1", "true", "yes")
 
-def setup_logging() -> None:
-    """루트 로거에 파일(DEBUG+) / 콘솔(ERROR+) 핸들러를 설정한다.
 
-    main.py 맨 앞에서 한 번만 호출하면 된다.
-    이미 핸들러가 등록된 경우(중복 호출 방지) 조용히 건너뛴다.
+def is_debug_mode() -> bool:
+    """현재 디버그 모드 여부를 반환한다."""
+    return _debug_mode
+
+
+def set_debug_mode(enabled: bool) -> None:
+    """런타임에 디버그 모드를 전환한다.
+
+    True  → 모든 로그 파일에 기록
+    False → api.request 로그만 파일에 기록
     """
+    global _debug_mode
+    _debug_mode = enabled
+
+
+# ── 파일 핸들러 필터 ──────────────────────────────────────────────────────────
+
+class _ApiOrDebugFilter(logging.Filter):
+    """파일 핸들러에 붙는 필터.
+
+    - 일반 모드: 로거 이름이 'api.' 로 시작하는 레코드만 통과
+    - 디버그 모드: 모든 레코드 통과
+    """
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003
+        if _debug_mode:
+            return True
+        return record.name.startswith("api.")
+
+
+# ── 초기화 ───────────────────────────────────────────────────────────────────
+
+def setup_logging(debug: bool | None = None) -> None:
+    """루트 로거에 파일 / 콘솔 핸들러를 설정한다.
+
+    Args:
+        debug: True/False 로 초기 디버그 모드를 지정.
+               None 이면 환경변수 LOG_DEBUG 값(모듈 로드 시 결정) 을 사용.
+    """
+    global _debug_mode
+    if debug is not None:
+        _debug_mode = debug
+
     root = logging.getLogger()
 
-    # 중복 호출 방지: RotatingFileHandler 가 이미 있으면 스킵
+    # 중복 호출 방지
     if any(isinstance(h, RotatingFileHandler) for h in root.handlers):
         return
 
@@ -40,7 +85,7 @@ def setup_logging() -> None:
 
     formatter = logging.Formatter(fmt=_FMT, datefmt=_DATEFMT)
 
-    # 파일 핸들러 – DEBUG 이상 기록, 5 MB 초과 시 자동 회전
+    # 파일 핸들러 – api.request(또는 디버그 모드 시 전체) 기록, 5 MB 회전
     file_handler = RotatingFileHandler(
         LOG_FILE,
         maxBytes=MAX_BYTES,
@@ -49,6 +94,7 @@ def setup_logging() -> None:
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
+    file_handler.addFilter(_ApiOrDebugFilter())
 
     # 콘솔 핸들러 – ERROR 이상만 출력
     console_handler = logging.StreamHandler()
@@ -65,7 +111,7 @@ _api_logger = logging.getLogger("api.request")
 
 
 def _mask(data: dict, keys: list[str]) -> dict:
-    """민감 키(예: api_key, Authorization) 를 마스킹한 사본을 반환한다."""
+    """민감 키를 마스킹한 사본을 반환한다."""
     out = dict(data)
     for k in keys:
         if k in out:
@@ -81,15 +127,7 @@ def log_api_request(
     *,
     mask_keys: list[str] | None = None,
 ) -> None:
-    """외부 API로 나가는 요청을 구조화된 형태로 기록한다.
-
-    Args:
-        service:   서비스 이름 ("ollama", "novelai", …)
-        method:    HTTP 메서드 ("POST", "GET", …)
-        endpoint:  요청 URL 또는 경로
-        payload:   전송할 전체 페이로드 딕셔너리
-        mask_keys: 로그에서 마스킹할 키 목록
-    """
+    """외부 API로 나가는 요청을 구조화된 형태로 기록한다."""
     safe = _mask(payload, mask_keys or [])
     _api_logger.info(
         "[API REQUEST] service=%s method=%s endpoint=%s\n%s",
@@ -102,7 +140,7 @@ def log_api_request(
 
 # ── 로그 조회 헬퍼 ────────────────────────────────────────────────────────────
 
-def get_recent_logs(n_lines: int = 100) -> str:
+def get_recent_logs(n_lines: int = 2) -> str:
     """로그 파일의 마지막 n_lines 줄을 반환한다."""
     if not LOG_FILE.exists():
         return "(로그 파일이 없습니다)"
