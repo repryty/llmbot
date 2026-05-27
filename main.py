@@ -4,11 +4,10 @@ import discord
 from discord.ext import commands
 
 from bot.core.config import settings
+from bot.core.bot_logger import setup_logging
 
-logging.basicConfig(
-    level=logging.ERROR,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+# 로깅 시스템 초기화 (data/bot.log, 5 MB 로테이션)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 intents = discord.Intents.default()
@@ -20,6 +19,7 @@ COGS = [
     "bot.cogs.chat_cog",
     "bot.cogs.novelai_cog",
     "bot.cogs.admin_cog",
+    "bot.cogs.logging_cog",
 ]
 
 
