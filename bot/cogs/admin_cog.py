@@ -1,11 +1,13 @@
 import traceback
-from pathlib import Path
 import discord
 from discord.ext import commands
 from discord import app_commands
 
 from bot.core.config import settings
 from bot.core.logging_config import LOG_FILE
+
+LOG_CHUNK_LIMIT = 1800
+MAX_LOG_LINES = 1000
 
 
 class AdminCog(commands.Cog):
@@ -19,7 +21,7 @@ class AdminCog(commands.Cog):
     async def _send_log_lines(self, interaction: discord.Interaction, lines: list[str]) -> None:
         chunks: list[str] = []
         current = ""
-        limit = 1800
+        limit = LOG_CHUNK_LIMIT
         for line in lines:
             line = line.rstrip("\n")
             if not current:
@@ -62,13 +64,12 @@ class AdminCog(commands.Cog):
     @app_commands.describe(lines="가져올 마지막 줄 수 (기본 200, 최대 1000)")
     async def logs(self, interaction: discord.Interaction, lines: int = 200):
         self._check_whitelist(interaction)
-        safe_lines = max(1, min(lines, 1000))
-        log_path = Path(LOG_FILE)
-        if not log_path.exists():
+        safe_lines = max(1, min(lines, MAX_LOG_LINES))
+        if not LOG_FILE.exists():
             await interaction.response.send_message("로그 파일이 없습니다.", ephemeral=True)
             return
         try:
-            content = log_path.read_text(encoding="utf-8", errors="replace")
+            content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
         except Exception as e:
             await interaction.response.send_message(f"로그 읽기 실패: {e}", ephemeral=True)
             return
