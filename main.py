@@ -7,7 +7,8 @@ from bot.core.config import settings
 from bot.core.bot_logger import setup_logging
 
 # 로깅 시스템 초기화 (data/bot.log, 5 MB 로테이션)
-setup_logging()
+# LOG_DEBUG=true 환경변수 또는 settings.LOG_DEBUG=True 이면 전체 로그 저장
+setup_logging(debug=settings.LOG_DEBUG)
 logger = logging.getLogger(__name__)
 
 intents = discord.Intents.default()

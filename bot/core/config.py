@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     DEFAULT_TOP_P: float = 0.9
     DEFAULT_MAX_TOKENS: int = 2048
 
+    # 로깅: True 이면 모든 로그 저장, False(기본) 이면 API 호출 로그만 저장
+    LOG_DEBUG: bool = False
+
     @property
     def whitelist_ids(self) -> set[int]:
         if not self.WHITELIST:
