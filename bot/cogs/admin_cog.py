@@ -20,15 +20,13 @@ class AdminCog(commands.Cog):
             raise app_commands.CheckFailure("이 명령어를 사용할 권한이 없습니다.")
 
     def _tail_log_lines(self, line_count: int) -> list[str]:
-        if line_count <= 0:
-            return []
         with LOG_FILE.open("rb") as log_file:
             log_file.seek(0, 2)
             position = log_file.tell()
             buffer = bytearray()
             chunk_size = 1024
             newline_count = 0
-            while position > 0 and newline_count <= line_count:
+            while position > 0 and newline_count < line_count:
                 read_size = min(chunk_size, position)
                 position -= read_size
                 log_file.seek(position)
@@ -82,7 +80,7 @@ class AdminCog(commands.Cog):
             traceback.print_exception(type(error), error, error.__traceback__)
 
     @app_commands.command(name="logs", description="최근 로그를 확인합니다.")
-    @app_commands.describe(lines="가져올 마지막 줄 수 (기본 200, 최대 1000)")
+    @app_commands.describe(lines="가져올 줄 수 (기본 200, 최대 1000)")
     async def logs(self, interaction: discord.Interaction, lines: int = 200):
         self._check_whitelist(interaction)
         if lines <= 0:
