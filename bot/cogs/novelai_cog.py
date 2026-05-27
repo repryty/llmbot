@@ -494,7 +494,6 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
             await interaction.response.send_message("내용을 입력해주세요.", ephemeral=True)
             return
 
-        # jobs: list of (trailing_prompt_or_empty, repeat_count)
         jobs: list[tuple[str, int]] = []
         for line in raw_lines:
             text, count = _parse_prompt_line(line)
@@ -511,85 +510,8 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
             )
             return
 
-        total = sum(c for _, c in jobs)
         await interaction.response.defer(thinking=True)
-
-        stored = self.cog._get_image_params(self.user_id)
-        pre_positive = stored.get("_pre_positive", "")
-        pre_negative = stored.get("_pre_negative", "")
-        used_model = stored.get("model", "nai-diffusion-4-5")
-        used_action = stored.get("_last_action", "generate")
-        post_negative = stored.get("negative_prompt", "")
-
-        header = (
-            f"배치 시작: {total}장"
-            f"  |  간격 {interval:.0f}초"
-            f"  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
-        )
-        progress_msg = await interaction.followup.send(f"⏳ {header}\n진행: 0 / {total}")
-
-        completed = 0
-        errors = 0
-        job_list = [(text, i) for text, count in jobs for i in range(count)]
-
-        for idx, (prompt_text, _) in enumerate(job_list):
-            if use_random:
-                trailing = generate_appearance(config=stored.get("_random_config"))
-                stored["_last_prompt"] = trailing
-                self.cog._save_params()
-            else:
-                trailing = prompt_text
-
-            used_prompt = ", ".join(p for p in [pre_positive, trailing] if p)
-            api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
-            api_params["n_samples"] = 1
-            api_params["seed"] = 0
-            combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
-            if combined_negative:
-                api_params["negative_prompt"] = combined_negative
-            else:
-                api_params.pop("negative_prompt", None)
-
-            label = f"`{trailing}`" if trailing else "(없음)"
-            completed += 1
-
-            try:
-                images = await novelai_client.generate_image(
-                    input_text=used_prompt,
-                    model=used_model,
-                    action=used_action,
-                    params=api_params,
-                )
-                files = [
-                    discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
-                    for j, img in enumerate(images)
-                ]
-                prefix = f"**[{completed}/{total}]** "
-                msg_content = prefix + label
-                if len(msg_content) > 2000:
-                    msg_content = prefix + f"`{trailing[:2000 - len(prefix) - 4]}...`"
-                await interaction.followup.send(
-                    content=msg_content,
-                    files=files,
-                )
-            except Exception as e:
-                errors += 1
-                logger.exception("nai 배치 오류 | user=%s trailing=%r", self.user_id, trailing)
-                err_prefix = f"**[{completed}/{total}]** "
-                err_content = err_prefix + label + f" — 오류: `{e}`"
-                if len(err_content) > 2000:
-                    err_content = err_prefix + f"`{trailing[:2000 - len(err_prefix) - 4]}...`" + f" — 오류: `{e}`"
-                await interaction.followup.send(
-                    content=err_content,
-                )
-
-            await progress_msg.edit(content=f"⏳ {header}\n진행: {completed} / {total}")
-
-            if idx < len(job_list) - 1:
-                await asyncio.sleep(interval)
-
-        suffix = f" (오류 {errors}건)" if errors else ""
-        await progress_msg.edit(content=f"✅ 배치 완료: {total}장{suffix}")
+        await self.cog._run_batch(interaction, self.user_id, jobs, interval, use_random)
 
 
 class NovelAICog(commands.Cog):
@@ -917,11 +839,148 @@ class NovelAICog(commands.Cog):
         ]
         await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
+    async def _run_batch(
+        self,
+        interaction: discord.Interaction,
+        user_id: str,
+        jobs: list[tuple[str, int]],
+        interval: float,
+        use_random: bool,
+    ):
+        total = sum(c for _, c in jobs)
+        stored = self._get_image_params(user_id)
+        pre_positive = stored.get("_pre_positive", "")
+        pre_negative = stored.get("_pre_negative", "")
+        used_model = stored.get("model", "nai-diffusion-4-5")
+        used_action = stored.get("_last_action", "generate")
+        post_negative = stored.get("negative_prompt", "")
+
+        header = (
+            f"배치 시작: {total}장"
+            f"  |  간격 {interval:.0f}초"
+            f"  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
+        )
+        progress_msg = await interaction.followup.send(f"⏳ {header}\n진행: 0 / {total}")
+
+        completed = 0
+        errors = 0
+        job_list = [(text, i) for text, count in jobs for i in range(count)]
+
+        for idx, (prompt_text, _) in enumerate(job_list):
+            if use_random:
+                trailing = generate_appearance(config=stored.get("_random_config"))
+                stored["_last_prompt"] = trailing
+                self._save_params()
+            else:
+                trailing = prompt_text
+
+            used_prompt = ", ".join(p for p in [pre_positive, trailing] if p)
+            api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
+            api_params["n_samples"] = 1
+            api_params["seed"] = 0
+            combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
+            if combined_negative:
+                api_params["negative_prompt"] = combined_negative
+            else:
+                api_params.pop("negative_prompt", None)
+
+            label = f"`{trailing}`" if trailing else "(없음)"
+            completed += 1
+
+            try:
+                images = await novelai_client.generate_image(
+                    input_text=used_prompt,
+                    model=used_model,
+                    action=used_action,
+                    params=api_params,
+                )
+                files = [
+                    discord.File(io.BytesIO(img), filename=f"batch_{completed}_{j}.png")
+                    for j, img in enumerate(images)
+                ]
+                prefix = f"**[{completed}/{total}]** "
+                msg_content = prefix + label
+                if len(msg_content) > 2000:
+                    msg_content = prefix + f"`{trailing[:2000 - len(prefix) - 4]}...`"
+                await interaction.followup.send(content=msg_content, files=files)
+            except Exception as e:
+                errors += 1
+                logger.exception("nai 배치 오류 | user=%s trailing=%r", user_id, trailing)
+                err_prefix = f"**[{completed}/{total}]** "
+                err_content = err_prefix + label + f" — 오류: `{e}`"
+                if len(err_content) > 2000:
+                    err_content = err_prefix + f"`{trailing[:2000 - len(err_prefix) - 4]}...`" + f" — 오류: `{e}`"
+                await interaction.followup.send(content=err_content)
+
+            await progress_msg.edit(content=f"⏳ {header}\n진행: {completed} / {total}")
+
+            if idx < len(job_list) - 1:
+                await asyncio.sleep(interval)
+
+        suffix = f" (오류 {errors}건)" if errors else ""
+        await progress_msg.edit(content=f"✅ 배치 완료: {total}장{suffix}")
+
     @app_commands.command(name="nai_batch", description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)")
     async def nai_batch(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
         await interaction.response.send_modal(NAIBatchModal(self, user_id))
+
+    @app_commands.command(name="nai_batch_file", description="텍스트 파일로 NAI 배치 이미지 생성")
+    @app_commands.describe(
+        file="프롬프트 목록 텍스트 파일 (.txt, 한 줄에 '텍스트 x N' 형식)",
+        interval="호출 간격 (초, 3~60, 기본 5)",
+        random_app="랜덤 외형 매번 재생성 (y/n, 기본 n)",
+    )
+    async def nai_batch_file(
+        self,
+        interaction: discord.Interaction,
+        file: discord.Attachment,
+        interval: Optional[float] = 5.0,
+        random_app: Optional[str] = "n",
+    ):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+
+        if file.size > 100_000:
+            await interaction.response.send_message("파일 크기는 100KB 이하여야 합니다.", ephemeral=True)
+            return
+
+        clamped_interval = max(BATCH_MIN_INTERVAL, min(BATCH_MAX_INTERVAL, interval or 5.0))
+        use_random = (random_app or "n").strip().lower() in ("y", "yes", "true", "1")
+
+        await interaction.response.defer(thinking=True)
+
+        try:
+            raw_bytes = await file.read()
+            raw_input = raw_bytes.decode("utf-8", errors="replace")
+        except Exception as e:
+            await interaction.followup.send(f"파일 읽기 오류: `{e}`", ephemeral=True)
+            return
+
+        raw_input = _strip_code_block(raw_input)
+        raw_lines = [l.strip() for l in raw_input.splitlines() if l.strip()]
+        if not raw_lines:
+            await interaction.followup.send("파일에 유효한 내용이 없습니다.", ephemeral=True)
+            return
+
+        jobs: list[tuple[str, int]] = []
+        for line in raw_lines:
+            text, count = _parse_prompt_line(line)
+            text = _strip_code_block(text)
+            if use_random:
+                jobs.append(("", count))
+            else:
+                if text:
+                    jobs.append((text, count))
+
+        if not jobs:
+            await interaction.followup.send(
+                "유효한 프롬프트가 없습니다. (랜덤 외형 OFF 시 텍스트 필요)", ephemeral=True
+            )
+            return
+
+        await self._run_batch(interaction, user_id, jobs, clamped_interval, use_random)
 
     @app_commands.command(name="random_set", description="랜덤 외형 생성 가중치를 설정·조회·초기화합니다.")
     @app_commands.describe(
