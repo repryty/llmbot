@@ -4,3 +4,6 @@ prompts/system_prompt.txt
 __pycache__/
 *.pyc
 *.pyo
+
+# 로그 파일 (data/bot.log, bot.log.1, …)
+data/bot.log*
