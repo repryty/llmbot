@@ -157,6 +157,26 @@ def _parse_prompt_line(line: str) -> tuple[str, int]:
     return line.strip(), 1
 
 
+def _strip_code_block(text: str) -> str:
+    """` 또는 ```로 감싸진 코드블럭 마커를 제거하고 내용만 반환합니다.
+
+    감싸지 않은 텍스트는 그대로 반환합니다.
+    트리플 백틱의 경우 선택적 언어 식별자(```python 등)도 함께 제거됩니다.
+    """
+    if not text:
+        return text
+    s = text.strip()
+    # 트리플 백틱: ```[언어]\n내용\n``` 또는 ```내용```
+    m = re.fullmatch(r'```(?:[^\n]*\n)?([\s\S]*?)```', s)
+    if m:
+        return m.group(1).strip()
+    # 단일 백틱: `내용`
+    m = re.fullmatch(r'`([^`]*)`', s)
+    if m:
+        return m.group(1).strip()
+    return s
+
+
 async def random_key_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -260,10 +280,10 @@ class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
-        new_prompt = self.prompt.value
-        new_negative = self.negative_prompt.value or ""
-        new_pre_pos = self.pre_positive.value or ""
-        new_pre_neg = self.pre_negative.value or ""
+        new_prompt = _strip_code_block(self.prompt.value)
+        new_negative = _strip_code_block(self.negative_prompt.value or "")
+        new_pre_pos = _strip_code_block(self.pre_positive.value or "")
+        new_pre_neg = _strip_code_block(self.pre_negative.value or "")
 
         stored = self.cog._get_image_params(self.user_id)
         used_model = stored.get("model", "nai-diffusion-4-5")
@@ -468,7 +488,8 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
 
         use_random = self.random_app_input.value.strip().lower() in ("y", "yes", "true", "1")
 
-        raw_lines = [l.strip() for l in self.prompts_input.value.splitlines() if l.strip()]
+        raw_input = _strip_code_block(self.prompts_input.value)
+        raw_lines = [l.strip() for l in raw_input.splitlines() if l.strip()]
         if not raw_lines:
             await interaction.response.send_message("내용을 입력해주세요.", ephemeral=True)
             return
@@ -477,6 +498,7 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         jobs: list[tuple[str, int]] = []
         for line in raw_lines:
             text, count = _parse_prompt_line(line)
+            text = _strip_code_block(text)
             if use_random:
                 jobs.append(("", count))
             else:
@@ -634,7 +656,7 @@ class NovelAICog(commands.Cog):
         pre_positive = stored.get("_pre_positive", "")
         pre_negative = stored.get("_pre_negative", "")
 
-        post_positive = prompt or stored.get("_last_prompt", "")
+        post_positive = _strip_code_block(prompt) if prompt is not None else stored.get("_last_prompt", "")
 
         if not post_positive and not pre_positive:
             await interaction.followup.send(
@@ -647,7 +669,7 @@ class NovelAICog(commands.Cog):
         used_action = action or stored.get("_last_action", "generate")
 
         if negative_prompt is not None:
-            stored["negative_prompt"] = negative_prompt
+            stored["negative_prompt"] = _strip_code_block(negative_prompt)
 
         api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
 
@@ -783,7 +805,7 @@ class NovelAICog(commands.Cog):
         type_name = IMAGE_PARAM_TYPES[key]
         try:
             if type_name == "str":
-                parsed = value
+                parsed = _strip_code_block(value)
             elif type_name == "int":
                 parsed = int(value)
             elif type_name == "float":
@@ -848,8 +870,10 @@ class NovelAICog(commands.Cog):
             return
 
         if positive is not None:
+            positive = _strip_code_block(positive)
             stored["_pre_positive"] = positive
         if negative is not None:
+            negative = _strip_code_block(negative)
             stored["_pre_negative"] = negative
         self._save_params()
         lines = []
