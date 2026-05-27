@@ -32,7 +32,6 @@ class AdminCog(commands.Cog):
         current = ""
         limit = LOG_CHUNK_LIMIT
         for line in lines:
-            line = line.rstrip("\n")
             if not current:
                 current = line
                 continue
@@ -73,6 +72,9 @@ class AdminCog(commands.Cog):
     @app_commands.describe(lines="가져올 마지막 줄 수 (기본 200, 최대 1000)")
     async def logs(self, interaction: discord.Interaction, lines: int = 200):
         self._check_whitelist(interaction)
+        notice = None
+        if lines > MAX_LOG_LINES:
+            notice = f"[notice] 요청한 줄 수가 최대치({MAX_LOG_LINES})로 제한되었습니다."
         safe_lines = max(1, min(lines, MAX_LOG_LINES))
         if not LOG_FILE.exists():
             await interaction.response.send_message("로그 파일이 없습니다.", ephemeral=True)
@@ -85,6 +87,8 @@ class AdminCog(commands.Cog):
         if not recent_lines:
             await interaction.response.send_message("로그가 비어 있습니다.", ephemeral=True)
             return
+        if notice:
+            recent_lines.insert(0, notice)
         await self._send_log_lines(interaction, recent_lines)
 
 
