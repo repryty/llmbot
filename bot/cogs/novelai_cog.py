@@ -348,7 +348,7 @@ class NAIRegenerateView(ui.View):
         original_prompt: str,
         original_negative: str,
     ):
-        super().__init__(timeout=180)
+        super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
         self.original_prompt = original_prompt
@@ -625,7 +625,7 @@ class NovelAICog(commands.Cog):
             ]
             view = NAIRegenerateView(self, user_id, post_positive, post_negative)
             content = f"`{post_positive}`" if post_positive else None
-            message = await interaction.followup.send(content=content, files=files, view=view)
+            message = await interaction.followup.send(content=content, files=files, view=view, wait=True)
             view.message = message
         except Exception as e:
             logger.exception(
