@@ -235,157 +235,15 @@ async def nai_value_autocomplete(
 
 
 
-class NAIPromptModal(ui.Modal, title="프롬프트 수정"):
-    pre_positive = ui.TextInput(
-        label="선행 포지티브 (pre-prompt)",
-        style=discord.TextStyle.paragraph,
-        max_length=1000,
-        required=False,
-    )
-    prompt = ui.TextInput(
-        label="포지티브 프롬프트",
-        style=discord.TextStyle.paragraph,
-        max_length=2000,
-        required=True,
-    )
-    pre_negative = ui.TextInput(
-        label="선행 네거티브 (pre-prompt)",
-        style=discord.TextStyle.paragraph,
-        max_length=1000,
-        required=False,
-    )
-    negative_prompt = ui.TextInput(
-        label="네거티브 프롬프트",
-        style=discord.TextStyle.paragraph,
-        max_length=2000,
-        required=False,
-    )
-
-    def __init__(
-        self,
-        cog: "NovelAICog",
-        message: discord.Message,
-        user_id: str,
-        original_prompt: str,
-        original_negative: str,
-        original_pre_positive: str = "",
-        original_pre_negative: str = "",
-    ):
-        super().__init__()
-        self.cog = cog
-        self.message = message
-        self.user_id = user_id
-        self.pre_positive.default = original_pre_positive or ""
-        self.prompt.default = original_prompt
-        self.pre_negative.default = original_pre_negative or ""
-        self.negative_prompt.default = original_negative or ""
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        new_prompt = _strip_code_block(self.prompt.value)
-        new_negative = _strip_code_block(self.negative_prompt.value or "")
-        new_pre_pos = _strip_code_block(self.pre_positive.value or "")
-        new_pre_neg = _strip_code_block(self.pre_negative.value or "")
-
-        stored = self.cog._get_image_params(self.user_id)
-        used_model = stored.get("model", "nai-diffusion-4-5")
-        used_action = stored.get("_last_action", "generate")
-
-        stored["_last_prompt"] = new_prompt
-        stored["negative_prompt"] = new_negative
-        stored["_pre_positive"] = new_pre_pos
-        stored["_pre_negative"] = new_pre_neg
-        self.cog._save_params()
-
-        used_prompt = ", ".join(p for p in [new_pre_pos, new_prompt] if p)
-        api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
-        combined_negative = ", ".join(p for p in [new_pre_neg, new_negative] if p)
-        if combined_negative:
-            api_params["negative_prompt"] = combined_negative
-        else:
-            api_params.pop("negative_prompt", None)
-
-        try:
-            images = await novelai_client.generate_image(
-                input_text=used_prompt,
-                model=used_model,
-                action=used_action,
-                params=api_params,
-            )
-            if not images:
-                await interaction.followup.send("이미지를 생성하지 못했습니다.", ephemeral=True)
-                return
-            files = [
-                discord.File(io.BytesIO(img), filename=f"result_{i}.png")
-                for i, img in enumerate(images)
-            ]
-            view = NAIRegenerateView(self.cog, self.user_id, new_prompt, new_negative)
-            await self.message.edit(content=None, attachments=files, view=view)
-            view.message = self.message
-        except Exception as e:
-            logger.exception(
-                "nai 재생성 오류 | user=%s prompt=%r model=%s action=%s params=%r",
-                self.user_id, used_prompt, used_model, used_action, api_params,
-            )
-            await interaction.followup.send(
-                format_error(
-                    e,
-                    user=f"(ID: {self.user_id})",
-                    prompt=used_prompt,
-                    model=used_model,
-                    action=used_action,
-                    api_params=api_params,
-                ),
-                ephemeral=True,
-            )
-
-
 class NAIRegenerateView(ui.View):
-    def __init__(
-        self,
-        cog: "NovelAICog",
-        user_id: str,
-        original_prompt: str,
-        original_negative: str,
-    ):
+    def __init__(self, cog: "NovelAICog", user_id: str):
         super().__init__(timeout=600)
         self.cog = cog
         self.user_id = user_id
-        self.original_prompt = original_prompt
-        self.original_negative = original_negative
         self.message: Optional[discord.Message] = None
 
     def _is_owner(self, interaction: discord.Interaction) -> bool:
         return str(interaction.user.id) == self.user_id
-
-    async def on_error(self, interaction: discord.Interaction, error: Exception, item: ui.Item) -> None:
-        logger.exception("뷰 버튼 오류 | user=%s item=%r", self.user_id, item, exc_info=error)
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(f"버튼 오류: {error}", ephemeral=True)
-            else:
-                await interaction.followup.send(f"버튼 오류: {error}", ephemeral=True)
-        except Exception:
-            pass
-
-    @ui.button(label="프롬프트 수정", style=discord.ButtonStyle.secondary, emoji="✏️")
-    async def edit_button(self, interaction: discord.Interaction, button: ui.Button):
-        if not self._is_owner(interaction):
-            await interaction.response.send_message(
-                "다른 사용자가 생성한 이미지는 수정할 수 없습니다.", ephemeral=True
-            )
-            return
-        stored = self.cog._get_image_params(self.user_id)
-        modal = NAIPromptModal(
-            self.cog,
-            self.message or interaction.message,
-            self.user_id,
-            self.original_prompt,
-            self.original_negative,
-            original_pre_positive=stored.get("_pre_positive", ""),
-            original_pre_negative=stored.get("_pre_negative", ""),
-        )
-        await interaction.response.send_modal(modal)
 
     @ui.button(label="외형 재생성", style=discord.ButtonStyle.primary, emoji="🎲")
     async def reroll_button(self, interaction: discord.Interaction, button: ui.Button):
@@ -432,7 +290,7 @@ class NAIRegenerateView(ui.View):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            view = NAIRegenerateView(self.cog, self.user_id, new_appearance, post_negative)
+            view = NAIRegenerateView(self.cog, self.user_id)
             await target.edit(content=None, attachments=files, view=view)
             view.message = target
         except Exception as e:
@@ -455,6 +313,7 @@ class NAIRegenerateView(ui.View):
 
 BATCH_MIN_INTERVAL = 3.0
 BATCH_MAX_INTERVAL = 60.0
+_MAX_PREFIX_CACHE = 100
 
 
 class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
@@ -530,6 +389,7 @@ class NovelAICog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._image_params: dict[str, dict] = self._load_params()
+        self._nai_prefix_responses: dict[int, discord.Message] = {}  # user_msg_id -> bot_msg
 
     @staticmethod
     def _load_params() -> dict:
@@ -553,6 +413,141 @@ class NovelAICog(commands.Cog):
     def _check_whitelist(self, interaction: discord.Interaction):
         if not whitelist_only(interaction):
             raise app_commands.CheckFailure("이 명령어는 허가된 사용자만 사용할 수 있습니다.")
+
+    async def _generate_nai_images(
+        self, user_id: str, prompt_text: Optional[str]
+    ) -> tuple[list[bytes], str, str, str, dict]:
+        """공통 NAI 이미지 생성 로직. (images, post_positive, used_prompt, model, action, api_params) 반환."""
+        stored = self._get_image_params(user_id)
+        pre_positive = stored.get("_pre_positive", "")
+        pre_negative = stored.get("_pre_negative", "")
+
+        post_positive = prompt_text if prompt_text is not None else stored.get("_last_prompt", "")
+        if not post_positive and not pre_positive:
+            raise ValueError("프롬프트를 입력하거나 먼저 한 번 이상 사용해야 합니다.")
+
+        used_prompt = ", ".join(p for p in [pre_positive, post_positive] if p)
+        used_model = stored.get("model", "nai-diffusion-4-5")
+        used_action = stored.get("_last_action", "generate")
+
+        api_params = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
+        post_negative = stored.get("negative_prompt", "")
+        combined_negative = ", ".join(p for p in [pre_negative, post_negative] if p)
+        if combined_negative:
+            api_params["negative_prompt"] = combined_negative
+        else:
+            api_params.pop("negative_prompt", None)
+
+        stored["_last_prompt"] = post_positive
+        stored["_last_action"] = used_action
+        stored["model"] = used_model
+        self._save_params()
+
+        images = await novelai_client.generate_image(
+            input_text=used_prompt,
+            model=used_model,
+            action=used_action,
+            params=api_params,
+        )
+        return images, post_positive, used_prompt, used_model, used_action, api_params
+
+    @commands.command(name="nai")
+    async def nai_prefix(self, ctx: commands.Context, *, prompt: str = ""):
+        """!nai <프롬프트> — 이미지 생성. 메시지를 편집하면 자동으로 재생성합니다."""
+        if ctx.author.id not in settings.whitelist_ids:
+            return
+        user_id = str(ctx.author.id)
+        prompt_text = _strip_code_block(prompt.strip()) or None
+
+        async with ctx.typing():
+            try:
+                images, post_positive, used_prompt, used_model, used_action, api_params = \
+                    await self._generate_nai_images(user_id, prompt_text)
+                if not images:
+                    await ctx.reply("이미지를 생성하지 못했습니다.")
+                    return
+                files = [
+                    discord.File(io.BytesIO(img), filename=f"result_{i}.png")
+                    for i, img in enumerate(images)
+                ]
+                view = NAIRegenerateView(self, user_id)
+                content = f"`{post_positive}`" if post_positive else None
+                bot_msg = await ctx.reply(content=content, files=files, view=view)
+                view.message = bot_msg
+
+                self._nai_prefix_responses[ctx.message.id] = bot_msg
+                if len(self._nai_prefix_responses) > _MAX_PREFIX_CACHE:
+                    oldest = next(iter(self._nai_prefix_responses))
+                    del self._nai_prefix_responses[oldest]
+            except ValueError as e:
+                await ctx.reply(str(e))
+            except Exception as e:
+                logger.exception("!nai 오류 | user=%s prompt=%r", user_id, prompt_text)
+                await ctx.reply(
+                    format_error(e, user=f"{ctx.author} (ID: {user_id})", prompt=str(prompt_text or ""))
+                )
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if before.content == after.content:
+            return
+        if after.id not in self._nai_prefix_responses:
+            return
+        if after.author.id not in settings.whitelist_ids:
+            return
+
+        bot_msg = self._nai_prefix_responses[after.id]
+
+        prefixes = await self.bot.get_prefix(after)
+        if isinstance(prefixes, str):
+            prefixes = [prefixes]
+
+        content = after.content.strip()
+        new_prompt_raw: Optional[str] = None
+        matched = False
+        for p in prefixes:
+            cmd_str = p + "nai"
+            if content.lower().startswith(cmd_str.lower()):
+                remainder = content[len(cmd_str):].strip()
+                new_prompt_raw = remainder if remainder else None
+                matched = True
+                break
+
+        if not matched:
+            return
+
+        user_id = str(after.author.id)
+        prompt_text = _strip_code_block(new_prompt_raw) if new_prompt_raw else None
+
+        try:
+            await bot_msg.edit(content="⏳ 재생성 중...", attachments=[])
+        except (discord.NotFound, discord.Forbidden):
+            self._nai_prefix_responses.pop(after.id, None)
+            return
+
+        try:
+            images, post_positive, used_prompt, used_model, used_action, api_params = \
+                await self._generate_nai_images(user_id, prompt_text)
+        except ValueError as e:
+            await bot_msg.edit(content=str(e))
+            return
+        except Exception as e:
+            logger.exception("!nai 편집 재생성 오류 | user=%s", user_id)
+            await bot_msg.edit(content=f"오류: `{e}`")
+            return
+
+        if not images:
+            await bot_msg.edit(content="이미지를 생성하지 못했습니다.")
+            return
+
+        files = [
+            discord.File(io.BytesIO(img), filename=f"result_{i}.png")
+            for i, img in enumerate(images)
+        ]
+        view = NAIRegenerateView(self, user_id)
+        new_content = f"`{post_positive}`" if post_positive else None
+        await bot_msg.edit(content=new_content, attachments=files, view=view)
+        view.message = bot_msg
 
     @app_commands.command(name="nai", description="NovelAI로 이미지를 생성합니다.")
     @app_commands.describe(
@@ -633,7 +628,7 @@ class NovelAICog(commands.Cog):
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
                 for i, img in enumerate(images)
             ]
-            view = NAIRegenerateView(self, user_id, post_positive, post_negative)
+            view = NAIRegenerateView(self, user_id)
             content = f"`{post_positive}`" if post_positive else None
             message = await interaction.followup.send(content=content, files=files, view=view, wait=True)
             view.message = message
