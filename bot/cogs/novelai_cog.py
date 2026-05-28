@@ -358,6 +358,16 @@ class NAIRegenerateView(ui.View):
     def _is_owner(self, interaction: discord.Interaction) -> bool:
         return str(interaction.user.id) == self.user_id
 
+    async def on_error(self, interaction: discord.Interaction, error: Exception, item: ui.Item) -> None:
+        logger.exception("뷰 버튼 오류 | user=%s item=%r", self.user_id, item, exc_info=error)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"버튼 오류: {error}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"버튼 오류: {error}", ephemeral=True)
+        except Exception:
+            pass
+
     @ui.button(label="프롬프트 수정", style=discord.ButtonStyle.secondary, emoji="✏️")
     async def edit_button(self, interaction: discord.Interaction, button: ui.Button):
         if not self._is_owner(interaction):
