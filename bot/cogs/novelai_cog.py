@@ -846,6 +846,71 @@ class NovelAICog(commands.Cog):
         ]
         await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
+    @app_commands.command(name="nai_del", description="선행·후행 프롬프트에서 태그 하나를 삭제합니다.")
+    @app_commands.describe(
+        target="삭제할 프롬프트 대상",
+        tag="삭제할 태그 (부분 일치)",
+    )
+    @app_commands.choices(target=[
+        app_commands.Choice(name="선행 포지티브", value="pre_positive"),
+        app_commands.Choice(name="선행 네거티브", value="pre_negative"),
+        app_commands.Choice(name="후행 포지티브", value="post_positive"),
+        app_commands.Choice(name="후행 네거티브", value="post_negative"),
+    ])
+    async def nai_del(
+        self,
+        interaction: discord.Interaction,
+        target: str,
+        tag: str,
+    ):
+        self._check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        stored = self._get_image_params(user_id)
+
+        key_map = {
+            "pre_positive": "_pre_positive",
+            "pre_negative": "_pre_negative",
+            "post_positive": "_last_prompt",
+            "post_negative": "negative_prompt",
+        }
+        label_map = {
+            "pre_positive": "선행 포지티브",
+            "pre_negative": "선행 네거티브",
+            "post_positive": "후행 포지티브",
+            "post_negative": "후행 네거티브",
+        }
+
+        store_key = key_map[target]
+        current = stored.get(store_key) or ""
+        if not current:
+            await interaction.response.send_message(
+                f"**{label_map[target]}** 프롬프트가 비어 있습니다.", ephemeral=True
+            )
+            return
+
+        tag_stripped = tag.strip()
+        tokens = [t.strip() for t in current.split(",")]
+        matched = next(
+            (t for t in tokens if tag_stripped.lower() in t.lower()),
+            None,
+        )
+        if matched is None:
+            await interaction.response.send_message(
+                f"`{tag_stripped}` 태그를 **{label_map[target]}**에서 찾을 수 없습니다.", ephemeral=True
+            )
+            return
+
+        tokens.remove(matched)
+        new_value = ", ".join(t for t in tokens if t)
+        if new_value:
+            stored[store_key] = new_value
+        else:
+            stored.pop(store_key, None)
+        self._save_params()
+        await interaction.response.send_message(
+            f"**{label_map[target]}**에서 `{matched}` 삭제됨.", ephemeral=True
+        )
+
     async def _run_batch(
         self,
         interaction: discord.Interaction,
