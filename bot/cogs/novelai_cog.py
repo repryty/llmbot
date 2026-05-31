@@ -846,10 +846,10 @@ class NovelAICog(commands.Cog):
         ]
         await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
-    @app_commands.command(name="nai_del", description="선행·후행 프롬프트에서 태그 하나를 삭제합니다.")
+    @app_commands.command(name="nai_del", description="선행·후행 프롬프트에서 태그를 삭제합니다. 태그 미입력 시 전체 삭제.")
     @app_commands.describe(
         target="삭제할 프롬프트 대상",
-        tag="삭제할 태그 (부분 일치)",
+        tag="삭제할 태그 (부분 일치, 생략 시 전체 삭제)",
     )
     @app_commands.choices(target=[
         app_commands.Choice(name="선행 포지티브", value="pre_positive"),
@@ -861,7 +861,7 @@ class NovelAICog(commands.Cog):
         self,
         interaction: discord.Interaction,
         target: str,
-        tag: str,
+        tag: Optional[str] = None,
     ):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -885,6 +885,14 @@ class NovelAICog(commands.Cog):
         if not current:
             await interaction.response.send_message(
                 f"**{label_map[target]}** 프롬프트가 비어 있습니다.", ephemeral=True
+            )
+            return
+
+        if tag is None:
+            stored.pop(store_key, None)
+            self._save_params()
+            await interaction.response.send_message(
+                f"**{label_map[target]}** 전체 삭제됨.", ephemeral=True
             )
             return
 
