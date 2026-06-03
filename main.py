@@ -21,7 +21,6 @@ COGS = [
     "bot.cogs.novelai_cog",
     "bot.cogs.admin_cog",
     "bot.cogs.logging_cog",
-    "bot.cogs.danbooru_cog",
 ]
 
 
