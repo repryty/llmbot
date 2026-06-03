@@ -555,7 +555,13 @@ class NovelAICog(commands.Cog):
         negative_prompt="네거티브 프롬프트 (생략 시 마지막 사용값 재사용)",
         model="모델 (생략 시 마지막 사용값 재사용)",
         action="동작 종류 (생략 시 마지막 사용값 재사용)",
+        ignore_pre="nai_pre 선행 프롬프트를 무시할 대상 (positive / negative / both)",
     )
+    @app_commands.choices(ignore_pre=[
+        app_commands.Choice(name="positive (선행 포지티브 무시)", value="positive"),
+        app_commands.Choice(name="negative (선행 네거티브 무시)", value="negative"),
+        app_commands.Choice(name="both (선행 포지티브·네거티브 모두 무시)", value="both"),
+    ])
     @app_commands.choices(model=[
         app_commands.Choice(name="nai-diffusion-4-5-full", value="nai-diffusion-4-5-full"),
         app_commands.Choice(name="nai-diffusion-4-5", value="nai-diffusion-4-5"),
@@ -576,14 +582,15 @@ class NovelAICog(commands.Cog):
         negative_prompt: Optional[str] = None,
         model: Optional[str] = None,
         action: Optional[str] = None,
+        ignore_pre: Optional[str] = None,
     ):
         self._check_whitelist(interaction)
         await interaction.response.defer(thinking=True)
         user_id = str(interaction.user.id)
         stored = self._get_image_params(user_id)
 
-        pre_positive = stored.get("_pre_positive", "")
-        pre_negative = stored.get("_pre_negative", "")
+        pre_positive = "" if ignore_pre in ("positive", "both") else stored.get("_pre_positive", "")
+        pre_negative = "" if ignore_pre in ("negative", "both") else stored.get("_pre_negative", "")
 
         post_positive = _strip_code_block(prompt) if prompt is not None else stored.get("_last_prompt", "")
 
@@ -832,17 +839,15 @@ class NovelAICog(commands.Cog):
         user_id = str(interaction.user.id)
         stored = self._get_image_params(user_id)
 
-        pre_pos = stored.get("_pre_positive") or "(없음)"
-        last_pos = stored.get("_last_prompt") or "(없음)"
-        pre_neg = stored.get("_pre_negative") or "(없음)"
-        last_neg = stored.get("negative_prompt") or "(없음)"
+        def _fmt(v: Optional[str]) -> str:
+            return f"`{v}`" if v else "(없음)"
 
         lines = [
             "**📝 저장된 프롬프트**",
-            f"**선행 포지티브:**\n{pre_pos}",
-            f"**후행 포지티브 (마지막 사용):**\n{last_pos}",
-            f"**선행 네거티브:**\n{pre_neg}",
-            f"**후행 네거티브:**\n{last_neg}",
+            f"**선행 포지티브:**\n{_fmt(stored.get('_pre_positive'))}",
+            f"**후행 포지티브 (마지막 사용):**\n{_fmt(stored.get('_last_prompt'))}",
+            f"**선행 네거티브:**\n{_fmt(stored.get('_pre_negative'))}",
+            f"**후행 네거티브:**\n{_fmt(stored.get('negative_prompt'))}",
         ]
         await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
