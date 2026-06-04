@@ -110,6 +110,21 @@ class LLMClient:
                 else:
                     yield "", content
 
+    async def chat_raw(
+        self,
+        messages: list[dict],
+        model: Optional[str] = None,
+        **params: Any,
+    ):
+        """tool_calls 검사용 non-streaming 응답 반환."""
+        client, resolved, endpoint, use_gemini = self._pick(model, params)
+        payload: dict[str, Any] = {"model": resolved, "messages": messages, **params}
+        if use_gemini:
+            payload["service_tier"] = "flex"
+        log_api_request(service="gemini" if use_gemini else "openai", method="POST",
+                        endpoint=endpoint, payload=payload)
+        return await client.chat.completions.create(**payload)
+
     async def list_models(self, use_gemini: bool = False) -> list[dict[str, Any]]:
         client = self._gemini if use_gemini else self._openai
         try:

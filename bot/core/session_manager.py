@@ -24,6 +24,7 @@ class SessionManager:
                     messages=data.get("messages", []),
                     params=data.get("params", {}),
                     system_prompt=data.get("system_prompt"),
+                    agent_mode=data.get("agent_mode", False),
                 )
                 for uid, data in raw.items()
             }
@@ -37,6 +38,7 @@ class SessionManager:
                 "messages": s.messages,
                 "params": s.params,
                 "system_prompt": s.system_prompt,
+                "agent_mode": s.agent_mode,
             }
             for uid, s in self._sessions.items()
         }
@@ -84,6 +86,17 @@ class SessionManager:
 
     def get_params(self, user_id: str) -> dict[str, Any]:
         return dict(self.get(user_id).params)
+
+    def append_raw_message(self, user_id: str, message: dict) -> None:
+        self.get(user_id).append_raw(message)
+        self._save()
+
+    def set_agent_mode(self, user_id: str, enabled: bool) -> None:
+        self.get(user_id).agent_mode = enabled
+        self._save()
+
+    def get_agent_mode(self, user_id: str) -> bool:
+        return self.get(user_id).agent_mode
 
 
 session_manager = SessionManager()

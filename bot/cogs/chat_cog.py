@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 import time
 from typing import Optional
@@ -10,10 +10,12 @@ from bot.core.session_manager import session_manager
 from bot.core.llm_client import llm_client
 from bot.core.config import settings
 from bot.core.error_utils import format_error, send_long
+from bot.core.tool_registry import TOOL_SCHEMAS, ToolDispatcher
 
 logger = logging.getLogger(__name__)
 
 STREAM_UPDATE_INTERVAL = 3.0
+MAX_AGENT_ITERATIONS = 8
 
 CHAT_PARAM_KEYS = [
     "model", "is_gemini", "temperature", "top_p", "max_tokens", "stop",
@@ -52,7 +54,6 @@ def _check_whitelist(interaction: discord.Interaction):
 
 
 def _thinking_display(thinking_text: str) -> str:
-    # 남아있는 think 태그 정리
     thinking_text = thinking_text.replace("<think>", "").replace("</think>", "")
     lines = thinking_text.split("\n")
     completed = [l.strip() for l in lines[:-1] if l.strip()]
@@ -77,7 +78,6 @@ CHUNK_SIZE = 1990
 
 
 async def _split_send(start_msg, text: str, send_fn, edit_fn):
-    """텍스트를 CHUNK_SIZE 단위로 분할해 전송한다."""
     if len(text) <= CHUNK_SIZE:
         if start_msg is None:
             return await send_fn(text)
@@ -139,7 +139,15 @@ class ChatCog(commands.Cog):
         send_fn,
         edit_fn,
         error_fn,
+        channel=None,
+        guild=None,
     ):
+        if session_manager.get_agent_mode(user_id):
+            await self._agent_chat(
+                user_id, prompt, params, channel, guild, send_fn, edit_fn, error_fn
+            )
+            return
+
         session_manager.add_message(user_id, "user", prompt)
         messages = session_manager.get_messages(user_id)
 
@@ -203,6 +211,95 @@ class ChatCog(commands.Cog):
             )
             await error_fn(reply_msg, error_text)
 
+    async def _agent_chat(
+        self,
+        user_id: str,
+        prompt: str,
+        params: dict,
+        channel,
+        guild,
+        send_fn,
+        edit_fn,
+        error_fn,
+    ):
+        session_manager.add_message(user_id, "user", prompt)
+        dispatcher = ToolDispatcher(user_id, channel, guild)
+        reply_msg = None
+
+        # 세션 params에 남아 있을 수 있는 구버전 tools 키 제거 후 TOOL_SCHEMAS 주입
+        agent_params = {k: v for k, v in params.items() if k != "tools"}
+        agent_params["tools"] = TOOL_SCHEMAS
+
+        try:
+            for _ in range(MAX_AGENT_ITERATIONS):
+                messages = session_manager.get_messages(user_id)
+                response = await llm_client.chat_raw(messages=messages, **agent_params)
+
+                msg = response.choices[0].message
+                tool_calls = msg.tool_calls
+
+                if not tool_calls:
+                    final_content = msg.content or ""
+                    session_manager.add_message(user_id, "assistant", final_content)
+                    final = final_content or "(응답 없음)"
+                    first_reply = reply_msg
+                    reply_msg = await _split_send(reply_msg, final, send_fn, edit_fn)
+                    target = first_reply or reply_msg
+                    if target is not None:
+                        try:
+                            if hasattr(target, "add_reaction"):
+                                await target.add_reaction("✅")
+                            elif target.channel:
+                                fetched = await target.channel.fetch_message(target.id)
+                                await fetched.add_reaction("✅")
+                        except Exception:
+                            pass
+                    return
+
+                # assistant tool_calls 메시지 세션에 저장
+                session_manager.append_raw_message(user_id, {
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": tc.type,
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                })
+
+                # 툴 실행 상태 표시
+                tool_names = " · ".join(tc.function.name for tc in tool_calls)
+                status = f"-# 🔧 {tool_names} 실행 중..."
+                try:
+                    if reply_msg is None:
+                        reply_msg = await send_fn(status)
+                    else:
+                        await edit_fn(reply_msg, status)
+                except Exception:
+                    pass
+
+                # 툴 실행 및 결과 저장
+                for tc in tool_calls:
+                    result = await dispatcher.dispatch(tc.function.name, tc.function.arguments)
+                    session_manager.append_raw_message(user_id, {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+
+            await error_fn(reply_msg, "⚠️ 에이전트가 최대 반복 횟수에 도달했습니다.")
+
+        except Exception as e:
+            logger.exception("agent 오류 | user=%s prompt=%r", user_id, prompt)
+            error_text = format_error(e, user=user_id, prompt=prompt, params=params)
+            await error_fn(reply_msg, error_text)
+
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="chat", description="AI와 대화를 나눕니다.")
@@ -249,7 +346,11 @@ class ChatCog(commands.Cog):
             else:
                 await msg.edit(content=text)
 
-        await self._stream_chat(user_id, prompt, params, send_fn, edit_fn, error_fn)
+        await self._stream_chat(
+            user_id, prompt, params, send_fn, edit_fn, error_fn,
+            channel=interaction.channel,
+            guild=interaction.guild,
+        )
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -266,6 +367,15 @@ class ChatCog(commands.Cog):
             .replace(f"<@!{self.bot.user.id}>", "")
             .strip()
         )
+
+        # 답장이 달린 메시지 참조
+        if message.reference and message.reference.message_id:
+            try:
+                ref = await message.channel.fetch_message(message.reference.message_id)
+                ref_content = ref.content[:500] if ref.content else "(내용 없음)"
+                content = f"[인용 — {ref.author.display_name}: {ref_content}]\n\n{content}"
+            except Exception:
+                pass
 
         # 첨부된 txt 파일이 있으면 내용을 읽어 메시지 본문 대신 사용
         txt_parts = []
@@ -299,7 +409,31 @@ class ChatCog(commands.Cog):
                 await msg.edit(content=text)
 
         async with message.channel.typing():
-            await self._stream_chat(user_id, content, params, send_fn, edit_fn, error_fn)
+            await self._stream_chat(
+                user_id, content, params, send_fn, edit_fn, error_fn,
+                channel=message.channel,
+                guild=message.guild,
+            )
+
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.command(name="agent", description="에이전트 모드를 켜거나 끕니다.")
+    @app_commands.describe(enabled="on = 활성화, off = 비활성화")
+    @app_commands.choices(enabled=[
+        app_commands.Choice(name="on", value="on"),
+        app_commands.Choice(name="off", value="off"),
+    ])
+    async def agent(self, interaction: discord.Interaction, enabled: str):
+        _check_whitelist(interaction)
+        user_id = str(interaction.user.id)
+        on = enabled == "on"
+        session_manager.set_agent_mode(user_id, on)
+        state = "활성화" if on else "비활성화"
+        tools_list = "\n".join(f"- `{s['function']['name']}`" for s in TOOL_SCHEMAS)
+        msg = f"에이전트 모드가 **{state}**되었습니다."
+        if on:
+            msg += f"\n\n사용 가능한 툴:\n{tools_list}"
+        await interaction.response.send_message(msg, ephemeral=True)
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -364,8 +498,8 @@ class ChatCog(commands.Cog):
 
         lines = []
         for i, msg in enumerate(messages, 1):
-            c = msg["content"]
-            if len(c) > 200:
+            c = msg.get("content") or "(tool call)"
+            if isinstance(c, str) and len(c) > 200:
                 c = c[:200] + "..."
             lines.append(f"**{i}. [{msg['role']}]** {c}")
 
@@ -410,24 +544,6 @@ class ChatCog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="tools", description="tools 설정 (JSON 문자열). 비워두면 제거.")
-    @app_commands.describe(json_str="JSON 문자열 또는 비워두기")
-    async def tools(self, interaction: discord.Interaction, json_str: Optional[str] = None):
-        _check_whitelist(interaction)
-        user_id = str(interaction.user.id)
-        if json_str is None or json_str.strip() == "":
-            session_manager.remove_param(user_id, "tools")
-            await interaction.response.send_message("tools 설정이 제거되었습니다.", ephemeral=True)
-            return
-        try:
-            parsed = json.loads(json_str)
-            session_manager.update_params(user_id, tools=parsed)
-            await interaction.response.send_message("tools 설정이 적용되었습니다.", ephemeral=True)
-        except json.JSONDecodeError:
-            await interaction.response.send_message("유효하지 않은 JSON입니다.", ephemeral=True)
-
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="set", description="파라미터를 설정·조회·초기화합니다.")
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
@@ -445,10 +561,11 @@ class ChatCog(commands.Cog):
 
         if key is None:
             current = session_manager.get_params(user_id)
-            if not current:
-                await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
-                return
-            lines = [f"**{k}:** `{v}`" for k, v in current.items()]
+            agent_on = session_manager.get_agent_mode(user_id)
+            lines = [f"**agent:** `{'on' if agent_on else 'off'}`"]
+            lines += [f"**{k}:** `{v}`" for k, v in current.items()]
+            if len(lines) == 1:
+                lines.append("설정된 파라미터가 없습니다.")
             await send_long(interaction, "\n".join(lines), ephemeral=True)
             return
 

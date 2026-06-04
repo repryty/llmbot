@@ -4,15 +4,19 @@ from typing import Any
 
 @dataclass
 class Session:
-    messages: list[dict[str, str]] = field(default_factory=list)
+    messages: list[dict[str, Any]] = field(default_factory=list)
     params: dict[str, Any] = field(default_factory=dict)
     system_prompt: str | None = None
+    agent_mode: bool = False
 
     def reset(self):
         self.messages = []
 
     def add_message(self, role: str, content: str):
         self.messages.append({"role": role, "content": content})
+
+    def append_raw(self, message: dict[str, Any]):
+        self.messages.append(message)
 
     def delete_message(self, index: int):
         if 0 <= index < len(self.messages):
