@@ -189,7 +189,7 @@ class _GeminiClient:
             "gemini-native", "POST", f"models/{resolved}:streamGenerateContent",
             {"model": resolved, "turns": len(contents)},
         )
-        async for chunk in self._client.aio.models.generate_content_stream(
+        async for chunk in await self._client.aio.models.generate_content_stream(
             model=resolved, contents=contents, config=config,
         ):
             if not chunk.candidates:
@@ -247,7 +247,7 @@ class _GeminiClient:
     async def list_models(self) -> list[dict[str, Any]]:
         try:
             result = []
-            async for m in self._client.aio.models.list():
+            async for m in await self._client.aio.models.list():
                 result.append({"id": m.name, "object": "model"})
             return result
         except Exception:
