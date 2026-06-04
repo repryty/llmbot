@@ -67,4 +67,4 @@ jobs:
             cd ${{ secrets.DEPLOY_PATH }}
             docker compose pull
             docker compose up -d
-            curl -X POST "${{ DISCORD_WEBHOOK }}" -H "Content-Type: application/json" -d '{"content": "봇이 실행되었습니다"}'
+            curl -X POST "${{ secrets.DISCORD_WEBHOOK }}" -H "Content-Type: application/json" -d '{"content": "봇이 실행되었습니다"}'
