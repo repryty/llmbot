@@ -841,6 +841,7 @@ class NovelAICog(commands.Cog):
         preset=[
             app_commands.Choice(name="landscape (1216×832)", value="landscape"),
             app_commands.Choice(name="portrait (832×1216)", value="portrait"),
+            app_commands.Choice(name="square (1024×1024)", value="square"),
         ]
     )
     async def nai_preset(self, interaction: discord.Interaction, preset: str):

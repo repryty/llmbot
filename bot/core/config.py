@@ -11,9 +11,14 @@ class Settings(BaseSettings):
 
     DISCORD_TOKEN: str
 
-    OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
-    OLLAMA_MODEL: str = "llama3"
-    OLLAMA_API_KEY: Optional[str] = None
+    # OpenAI-Compatible API (범용)
+    OPENAI_BASE_URL: str = "http://localhost/v1"
+    OPENAI_MODEL: str = "gpt-4o"
+    OPENAI_API_KEY: Optional[str] = None
+
+    # Gemini (OpenAI-Compatible 엔드포인트 경유, service_tier=flex 자동 적용)
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3.0-flash"
 
     NOVELAI_BASE_URL: str = "https://api.novelai.net"
     NOVELAI_API_KEY: Optional[str] = None

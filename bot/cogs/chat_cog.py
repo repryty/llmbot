@@ -7,7 +7,7 @@ from discord.ext import commands
 from discord import app_commands
 
 from bot.core.session_manager import session_manager
-from bot.core.ollama_client import ollama_client
+from bot.core.llm_client import llm_client
 from bot.core.config import settings
 from bot.core.error_utils import format_error, send_long
 
@@ -16,12 +16,13 @@ logger = logging.getLogger(__name__)
 STREAM_UPDATE_INTERVAL = 3.0
 
 CHAT_PARAM_KEYS = [
-    "model", "temperature", "top_p", "max_tokens", "stop",
+    "model", "is_gemini", "temperature", "top_p", "max_tokens", "stop",
     "seed", "presence_penalty", "frequency_penalty", "n", "response_format",
 ]
 
 CHAT_PARAM_TYPES = {
     "model": "str",
+    "is_gemini": "bool",
     "temperature": "float",
     "top_p": "float",
     "max_tokens": "int",
@@ -34,6 +35,7 @@ CHAT_PARAM_TYPES = {
 }
 
 CHAT_PARAM_VALUE_HINTS = {
+    "is_gemini": "true=Gemini / false=OpenAI-Compatible (미설정 시 모델명 자동 감지)",
     "temperature": "0~2",
     "top_p": "0~1",
     "presence_penalty": "-2~2",
@@ -115,6 +117,7 @@ async def chat_value_autocomplete(
     key = interaction.namespace.key or ""
     enum_choices = {
         "response_format": ["text", "json_object"],
+        "is_gemini": ["true", "false"],
     }.get(key, [])
     suggestions = enum_choices + ["clear"]
     return [
@@ -147,7 +150,7 @@ class ChatCog(commands.Cog):
         reply_msg = None
 
         try:
-            async for thinking_chunk, content_chunk in ollama_client.chat_stream(
+            async for thinking_chunk, content_chunk in llm_client.chat_stream(
                 messages=messages, **params
             ):
                 if thinking_chunk:
@@ -202,7 +205,7 @@ class ChatCog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="chat", description="Ollama AI와 대화를 나눕니다.")
+    @app_commands.command(name="chat", description="AI와 대화를 나눕니다.")
     @app_commands.describe(
         prompt="보낼 메시지",
         temperature="temperature (0~2)",
@@ -373,17 +376,31 @@ class ChatCog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="models", description="사용 가능한 Ollama 모델 목록을 조회합니다.")
-    async def models(self, interaction: discord.Interaction):
+    @app_commands.command(name="models", description="사용 가능한 모델 목록을 조회합니다.")
+    @app_commands.describe(backend="조회할 백엔드 (미설정 시 is_gemini 설정 따름)")
+    @app_commands.choices(backend=[
+        app_commands.Choice(name="gemini", value="gemini"),
+        app_commands.Choice(name="openai", value="openai"),
+    ])
+    async def models(self, interaction: discord.Interaction, backend: Optional[str] = None):
         _check_whitelist(interaction)
         await interaction.response.defer(thinking=True)
+        user_id = str(interaction.user.id)
+        if backend == "gemini":
+            use_gemini = True
+        elif backend == "openai":
+            use_gemini = False
+        else:
+            params = session_manager.get_params(user_id)
+            use_gemini = bool(params.get("is_gemini", False))
         try:
-            model_list = await ollama_client.list_models()
+            model_list = await llm_client.list_models(use_gemini=use_gemini)
             if not model_list:
                 await interaction.followup.send("모델 목록을 가져올 수 없습니다.")
                 return
             lines = [f"- `{m['id']}`" for m in model_list]
-            text = "사용 가능한 모델:\n" + "\n".join(lines)
+            label = "Gemini" if use_gemini else "OpenAI-Compatible"
+            text = f"**{label}** 모델:\n" + "\n".join(lines)
             if len(text) > 1900:
                 text = text[:1900] + "\n... (중략)"
             await interaction.followup.send(text)
