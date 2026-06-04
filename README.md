@@ -6,7 +6,8 @@ Discord LLM 챗봇. OpenAI 호환 API, Gemini, NovelAI를 지원하며 다중 �
 
 - **Python 3.14+**, UV 패키지 매니저
 - **discord.py** — Discord 봇 프레임워크
-- **openai SDK** — OpenAI 호환 엔드포인트 및 Gemini 연결
+- **openai SDK** — OpenAI 호환 엔드포인트 연결
+- **google-genai SDK** — Gemini 네이티브 직접 연결 (Function Calling 포함)
 - **httpx** — NovelAI 비동기 HTTP 요청
 - **pydantic-settings** — `.env` 기반 설정 관리
 
@@ -23,7 +24,7 @@ llmbot/
 │   │   └── logging_cog.py    # 로그 조회, 디버그 모드 토글
 │   ├── core/
 │   │   ├── config.py         # Pydantic Settings — .env 파싱
-│   │   ├── llm_client.py     # LLM 클라이언트 (OpenAI 호환 + Gemini 자동 감지)
+│   │   ├── llm_client.py     # LLM 클라이언트 (OpenAI 호환 / Gemini 네이티브 라우팅)
 │   │   ├── novelai_client.py # NovelAI 텍스트/이미지 생성
 │   │   ├── session_manager.py# 사용자별 세션 영속성 관리
 │   │   ├── bot_logger.py     # 로테이팅 파일 로거 (5MB, 2백업)
@@ -64,9 +65,9 @@ OPENAI_BASE_URL=http://localhost/v1
 OPENAI_MODEL=gpt-4o
 OPENAI_API_KEY=
 
-# Gemini (모델명에 "gemini" 포함 시 자동 감지)
+# Gemini (google-genai 직접 사용, 모델명에 "gemini" 포함 시 자동 감지)
 GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash
 
 # NovelAI
 NOVELAI_BASE_URL=https://api.novelai.net
@@ -102,7 +103,7 @@ docker compose up -d
 | `/agent <on\|off>` | 에이전트 모드 토글 |
 | `/reset` | 대화 히스토리 초기화 |
 | `/system <prompt>` | 시스템 프롬프트 설정 |
-| `/set [key] [value]` | 파라미터 조회/변경 (temperature, model 등) |
+| `/set [query]` | 파라미터 조회/변경 — `key=value` 또는 `key value`로 설정, `key`만 입력 시 조회, `clear`로 초기화 |
 | `/history` | 현재 세션 메시지 목록 |
 | `/add <role> <content>` | 히스토리에 메시지 삽입 |
 | `/delete <index>` | 히스토리에서 메시지 삭제 |
@@ -115,7 +116,7 @@ docker compose up -d
 
 ## 에이전트 모드
 
-`/agent on`으로 활성화. Gemini Function Calling 기반 툴 루프를 사용한다.
+`/agent on`으로 활성화. LLM Function Calling 기반 툴 루프를 사용한다. Gemini는 네이티브 SDK로 호출하므로 Function Calling이 정상 동작한다.
 
 | 툴 | 설명 |
 |----|------|
@@ -132,7 +133,8 @@ docker compose up -d
 
 ## 아키텍처 메모
 
-- **LLM 백엔드 자동 감지**: 모델명에 `gemini` 포함 시 Gemini API, 아니면 OpenAI 호환으로 처리
+- **LLM 백엔드 라우팅**: 모델명에 `gemini` 포함(또는 `is_gemini=true` 설정) 시 `google-genai` 네이티브 클라이언트, 아니면 OpenAI 호환 클라이언트로 처리
+- **Gemini 메시지 변환**: 세션은 항상 OpenAI 포맷으로 저장하고, Gemini 호출 시 자동으로 `contents` 포맷(role: model, function_call/function_response parts)으로 변환
 - **스트리밍**: `<think>` 태그와 `reasoning_content` 필드를 파싱해 Discord 스포일러로 표시
 - **세션 영속성**: `data/chat_sessions.json`에 사용자별 저장, 봇 재시작 후에도 유지
 - **화이트리스트**: `WHITELIST` env에 Discord 사용자 ID 목록으로 접근 제어

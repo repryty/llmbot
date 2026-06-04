@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4o"
     OPENAI_API_KEY: Optional[str] = None
 
-    # Gemini (OpenAI-Compatible 엔드포인트 경유, service_tier=flex 자동 적용)
+    # Gemini (google-genai 라이브러리 직접 사용)
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3.0-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     NOVELAI_BASE_URL: str = "https://api.novelai.net"
     NOVELAI_API_KEY: Optional[str] = None
