@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import time
 from typing import Optional
@@ -200,6 +200,8 @@ class ChatCog(commands.Cog):
             )
             await error_fn(reply_msg, error_text)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="chat", description="Ollama AI와 대화를 나눕니다.")
     @app_commands.describe(
         prompt="보낼 메시지",
@@ -296,6 +298,8 @@ class ChatCog(commands.Cog):
         async with message.channel.typing():
             await self._stream_chat(user_id, content, params, send_fn, edit_fn, error_fn)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="reset", description="대화 세션을 초기화합니다.")
     async def reset(self, interaction: discord.Interaction):
         _check_whitelist(interaction)
@@ -303,6 +307,8 @@ class ChatCog(commands.Cog):
         session_manager.reset(user_id)
         await interaction.response.send_message("세션이 초기화되었습니다.", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="system", description="시스템 프롬프트를 설정합니다.")
     @app_commands.describe(prompt="시스템 프롬프트 내용")
     async def system(self, interaction: discord.Interaction, prompt: str):
@@ -311,6 +317,8 @@ class ChatCog(commands.Cog):
         session_manager.set_system_prompt(user_id, prompt)
         await interaction.response.send_message("시스템 프롬프트가 설정되었습니다.", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="add", description="대화 기록에 임의 메시지를 추가합니다.")
     @app_commands.describe(role="역할 (system/user/assistant)", content="메시지 내용")
     async def add(
@@ -327,6 +335,8 @@ class ChatCog(commands.Cog):
         session_manager.add_message(user_id, role, content)
         await interaction.response.send_message(f"{role} 메시지를 추가했습니다.", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="delete", description="대화 기록에서 특정 메시지를 삭제합니다.")
     @app_commands.describe(index="삭제할 메시지 번호 (1부터 시작)")
     async def delete(self, interaction: discord.Interaction, index: int):
@@ -338,6 +348,8 @@ class ChatCog(commands.Cog):
         else:
             await interaction.response.send_message("유효하지 않은 인덱스입니다.", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="history", description="현재 세션의 대화 기록을 확인합니다.")
     async def history(self, interaction: discord.Interaction):
         _check_whitelist(interaction)
@@ -359,6 +371,8 @@ class ChatCog(commands.Cog):
             text = text[:1900] + "\n... (중략)"
         await interaction.response.send_message(text, ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="models", description="사용 가능한 Ollama 모델 목록을 조회합니다.")
     async def models(self, interaction: discord.Interaction):
         _check_whitelist(interaction)
@@ -377,6 +391,8 @@ class ChatCog(commands.Cog):
             logger.exception("models 명령어 오류 | user=%s", interaction.user.id)
             await interaction.followup.send(format_error(e, command="models"), ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="tools", description="tools 설정 (JSON 문자열). 비워두면 제거.")
     @app_commands.describe(json_str="JSON 문자열 또는 비워두기")
     async def tools(self, interaction: discord.Interaction, json_str: Optional[str] = None):
@@ -393,6 +409,8 @@ class ChatCog(commands.Cog):
         except json.JSONDecodeError:
             await interaction.response.send_message("유효하지 않은 JSON입니다.", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="set", description="파라미터를 설정·조회·초기화합니다.")
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",

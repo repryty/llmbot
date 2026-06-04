@@ -1,4 +1,4 @@
-"""로깅 COG — 디스코드에서 로그를 조회하고 디버그 모드를 제어한다.
+﻿"""로깅 COG — 디스코드에서 로그를 조회하고 디버그 모드를 제어한다.
 
 명령어:
     /logs  [lines]    — 최근 N 줄 로그 조회 (기본 2, 최대 200)
@@ -49,6 +49,8 @@ class LoggingCog(commands.Cog):
 
     # ── /logs ─────────────────────────────────────────────────────────────────
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="logs", description="최근 로그를 조회합니다.")
     @app_commands.describe(lines="가져올 줄 수 (기본 2, 최대 200)")
     async def logs(
@@ -74,6 +76,8 @@ class LoggingCog(commands.Cog):
 
     # ── /log_size ─────────────────────────────────────────────────────────────
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="log_size", description="로그 파일 크기를 확인합니다.")
     async def log_size(self, interaction: discord.Interaction) -> None:
         _check_whitelist(interaction)
@@ -100,6 +104,8 @@ class LoggingCog(commands.Cog):
 
     # ── /log_debug ────────────────────────────────────────────────────────────
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(
         name="log_debug",
         description="로그 디버그 모드를 켜거나 끕니다. 생략 시 현재 상태 표시.",

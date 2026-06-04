@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import io
 import json
 import re
@@ -549,6 +549,8 @@ class NovelAICog(commands.Cog):
         await bot_msg.edit(content=new_content, attachments=files, view=view)
         view.message = bot_msg
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai", description="NovelAI로 이미지를 생성합니다.")
     @app_commands.describe(
         prompt="포지티브 프롬프트 (생략 시 마지막 사용값 재사용)",
@@ -656,6 +658,8 @@ class NovelAICog(commands.Cog):
                 ephemeral=True,
             )
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_preset", description="이미지 생성 세팅을 프리셋으로 한번에 적용합니다.")
     @app_commands.describe(preset="적용할 프리셋")
     @app_commands.choices(preset=[
@@ -680,6 +684,8 @@ class NovelAICog(commands.Cog):
             ephemeral=True,
         )
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_set", description="이미지 파라미터를 설정·조회·초기화합니다.")
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
@@ -767,6 +773,8 @@ class NovelAICog(commands.Cog):
         self._save_params()
         await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_pre", description="선행 프롬프트(그림체 프리셋)를 설정·확인·초기화합니다.")
     @app_commands.describe(
         positive="선행 포지티브 프롬프트 (생략 시 유지)",
@@ -819,6 +827,8 @@ class NovelAICog(commands.Cog):
             lines.append(f"**선행 네거티브:** {negative}")
         await send_long(interaction, "\n".join(lines), ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="random", description="랜덤 외형 태그를 생성해 후행 프롬프트에 주입합니다.")
     async def random_appearance(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
@@ -833,6 +843,8 @@ class NovelAICog(commands.Cog):
             ephemeral=True,
         )
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_prompt", description="현재 저장된 프롬프트를 열람합니다.")
     async def nai_prompt(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
@@ -851,6 +863,8 @@ class NovelAICog(commands.Cog):
         ]
         await send_long(interaction, "\n\n".join(lines), ephemeral=True)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_del", description="선행·후행 프롬프트에서 태그를 삭제합니다. 태그 미입력 시 전체 삭제.")
     @app_commands.describe(
         target="삭제할 프롬프트 대상",
@@ -1005,12 +1019,16 @@ class NovelAICog(commands.Cog):
         suffix = f" (오류 {errors}건)" if errors else ""
         await progress_msg.edit(content=f"✅ 배치 완료: {total}장{suffix}")
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_batch", description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)")
     async def nai_batch(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
         await interaction.response.send_modal(NAIBatchModal(self, user_id))
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_batch_file", description="텍스트 파일로 NAI 배치 이미지 생성")
     @app_commands.describe(
         file="프롬프트 목록 텍스트 파일 (.txt, 한 줄에 '텍스트 x N' 형식)",
@@ -1067,6 +1085,8 @@ class NovelAICog(commands.Cog):
 
         await self._run_batch(interaction, user_id, jobs, clamped_interval, use_random)
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="random_set", description="랜덤 외형 생성 가중치를 설정·조회·초기화합니다.")
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
@@ -1153,6 +1173,8 @@ class NovelAICog(commands.Cog):
         await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
 
 
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="nai_zip", description="채널의 최근 n개 이미지를 zip으로 묶어 보냅니다.")
     @app_commands.describe(n="가져올 이미지 개수 (기본 10, 최대 100)")
     async def nai_zip(self, interaction: discord.Interaction, n: Optional[int] = 10):
