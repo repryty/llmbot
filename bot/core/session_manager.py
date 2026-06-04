@@ -55,6 +55,13 @@ class SessionManager:
         self.get(user_id).reset()
         self._save()
 
+    def reset_to_default(self, user_id: str):
+        prompt = None
+        if DEFAULT_PROMPT_PATH.exists():
+            prompt = DEFAULT_PROMPT_PATH.read_text(encoding="utf-8").strip() or None
+        self.get(user_id).system_prompt = prompt
+        self._save()
+
     def add_message(self, user_id: str, role: str, content: str):
         self.get(user_id).add_message(role, content)
         self._save()

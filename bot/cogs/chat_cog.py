@@ -1,6 +1,7 @@
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Optional
 import discord
 from discord.ext import commands
@@ -447,12 +448,48 @@ class ChatCog(commands.Cog):
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.command(name="system", description="시스템 프롬프트를 설정합니다.")
-    @app_commands.describe(prompt="시스템 프롬프트 내용")
-    async def system(self, interaction: discord.Interaction, prompt: str):
+    @app_commands.describe(
+        prompt="시스템 프롬프트 내용",
+        action="reset = system_prompt.txt로 초기화",
+        file="prompts/ 폴더의 파일명 (예: my_prompt.txt)",
+    )
+    @app_commands.choices(action=[
+        app_commands.Choice(name="reset", value="reset"),
+    ])
+    async def system(
+        self,
+        interaction: discord.Interaction,
+        prompt: Optional[str] = None,
+        action: Optional[str] = None,
+        file: Optional[str] = None,
+    ):
         _check_whitelist(interaction)
         user_id = str(interaction.user.id)
-        session_manager.set_system_prompt(user_id, prompt)
-        await interaction.response.send_message("시스템 프롬프트가 설정되었습니다.", ephemeral=True)
+
+        if action == "reset":
+            session_manager.reset_to_default(user_id)
+            await interaction.response.send_message("기본 시스템 프롬프트(system_prompt.txt)로 초기화되었습니다.", ephemeral=True)
+        elif file:
+            file_path = Path("prompts") / file
+            if not file_path.exists():
+                await interaction.response.send_message(f"`{file}` 파일을 찾을 수 없습니다.", ephemeral=True)
+                return
+            content = file_path.read_text(encoding="utf-8").strip()
+            if not content:
+                await interaction.response.send_message("파일이 비어 있습니다.", ephemeral=True)
+                return
+            session_manager.set_system_prompt(user_id, content)
+            await interaction.response.send_message(f"`{file}`에서 시스템 프롬프트를 로드했습니다.", ephemeral=True)
+        elif prompt:
+            session_manager.set_system_prompt(user_id, prompt)
+            await interaction.response.send_message("시스템 프롬프트가 설정되었습니다.", ephemeral=True)
+        else:
+            current = session_manager.get(user_id).system_prompt
+            if current:
+                text = current[:1900]
+                await interaction.response.send_message(f"현재 시스템 프롬프트:\n```\n{text}\n```", ephemeral=True)
+            else:
+                await interaction.response.send_message("시스템 프롬프트가 설정되지 않았습니다.", ephemeral=True)
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
