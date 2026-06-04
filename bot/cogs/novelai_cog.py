@@ -46,6 +46,16 @@ IMAGE_PRESETS = {
         "scale": 5,
         "cfg_rescale": 0,
     },
+    "square": {
+        "model": "nai-diffusion-4-5-full",
+        "width": 1024,
+        "height": 1024,
+        "sampler": "k_euler_ancestral",
+        "noise_schedule": "karras",
+        "steps": 28,
+        "scale": 5,
+        "cfg_rescale": 0,
+    },
 }
 
 # _last_prompt, _last_action : 내부 추적용 (API에 전달하지 않음)
@@ -54,16 +64,34 @@ IMAGE_PRESETS = {
 # _random_appearance         : 구버전 호환용 (더 이상 사용하지 않음, API 전달 방지용으로만 유지)
 # _random_config             : 랜덤 생성 가중치 설정
 _INTERNAL_KEYS = {
-    "_last_prompt", "_last_action", "model",
-    "_pre_positive", "_pre_negative", "_random_appearance",
+    "_last_prompt",
+    "_last_action",
+    "model",
+    "_pre_positive",
+    "_pre_negative",
+    "_random_appearance",
     "_random_config",
 }
 
 IMAGE_PARAM_KEYS = [
-    "model", "width", "height", "scale", "sampler", "steps", "seed",
-    "n_samples", "negative_prompt", "ucPreset", "qualityToggle",
-    "noise_schedule", "cfg_rescale", "sm", "sm_dyn", "dynamic_thresholding",
-    "strength", "noise",
+    "model",
+    "width",
+    "height",
+    "scale",
+    "sampler",
+    "steps",
+    "seed",
+    "n_samples",
+    "negative_prompt",
+    "ucPreset",
+    "qualityToggle",
+    "noise_schedule",
+    "cfg_rescale",
+    "sm",
+    "sm_dyn",
+    "dynamic_thresholding",
+    "strength",
+    "noise",
 ]
 
 IMAGE_PARAM_TYPES = {
@@ -102,12 +130,22 @@ IMAGE_PARAM_VALUE_HINTS = {
 
 IMAGE_PARAM_VALUE_CHOICES: dict[str, list[str]] = {
     "model": [
-        "nai-diffusion-4-5-full", "nai-diffusion-4-5", "nai-diffusion-4-5-curated",
-        "nai-diffusion-4", "nai-diffusion-4-curated-preview", "nai-diffusion-3",
+        "nai-diffusion-4-5-full",
+        "nai-diffusion-4-5",
+        "nai-diffusion-4-5-curated",
+        "nai-diffusion-4",
+        "nai-diffusion-4-curated-preview",
+        "nai-diffusion-3",
     ],
     "sampler": [
-        "k_euler_ancestral", "k_euler", "k_dpm_2", "k_dpm_2_ancestral",
-        "k_dpmpp_2s_ancestral", "k_dpmpp_2m", "k_dpmpp_sde", "ddim_v3",
+        "k_euler_ancestral",
+        "k_euler",
+        "k_dpm_2",
+        "k_dpm_2_ancestral",
+        "k_dpmpp_2s_ancestral",
+        "k_dpmpp_2m",
+        "k_dpmpp_sde",
+        "ddim_v3",
     ],
     "noise_schedule": ["karras", "exponential", "polyexponential", "native"],
     "ucPreset": ["0", "1", "2"],
@@ -120,41 +158,105 @@ IMAGE_PARAM_VALUE_CHOICES: dict[str, list[str]] = {
 
 # (type, default, description)
 RANDOM_WEIGHT_KEYS: dict[str, tuple] = {
-    "p_animal":      ("float", 0.10, "동물 특징(귀·꼬리·뿔 등) 생성 확률 [0.0~1.0]  기본 0.10"),
-    "p_skin":        ("float", 0.40, "피부 색상 생성 확률 [0.0~1.0]  기본 0.40"),
-    "p_eye_color":   ("float", 0.80, "눈 색상 생성 확률 [0.0~1.0]  기본 0.80"),
-    "p_eye_style":   ("float", 0.15, "눈 스타일(이색동공·하트눈 등) 생성 확률 [0.0~1.0]  기본 0.15"),
-    "p_eye_expr":    ("float", 0.25, "눈 표정(타레메·지토메 등) 생성 확률 [0.0~1.0]  기본 0.25"),
+    "p_animal": (
+        "float",
+        0.10,
+        "동물 특징(귀·꼬리·뿔 등) 생성 확률 [0.0~1.0]  기본 0.10",
+    ),
+    "p_skin": ("float", 0.40, "피부 색상 생성 확률 [0.0~1.0]  기본 0.40"),
+    "p_eye_color": ("float", 0.80, "눈 색상 생성 확률 [0.0~1.0]  기본 0.80"),
+    "p_eye_style": (
+        "float",
+        0.15,
+        "눈 스타일(이색동공·하트눈 등) 생성 확률 [0.0~1.0]  기본 0.15",
+    ),
+    "p_eye_expr": (
+        "float",
+        0.25,
+        "눈 표정(타레메·지토메 등) 생성 확률 [0.0~1.0]  기본 0.25",
+    ),
     "p_hair_length": ("float", 0.80, "머리 길이 생성 확률 [0.0~1.0]  기본 0.80"),
-    "p_hair_color":  ("float", 0.70, "머리 색상 생성 확률 [0.0~1.0]  기본 0.70"),
-    "p_hair_multi":  ("float", 0.10, "다색 머리(그라데이션·레인보우 등) 생성 확률 [0.0~1.0]  기본 0.10"),
-    "p_braid":       ("float", 0.50, "묶음 스타일(포니테일·트윈테일 등) 생성 확률 [0.0~1.0]  기본 0.50"),
-    "p_hair_style":  ("float", 0.15, "머리 텍스처(웨이브·곱슬 등) 생성 확률 [0.0~1.0]  기본 0.15"),
-    "p_bangs":       ("float", 0.25, "앞머리 스타일 생성 확률 [0.0~1.0]  기본 0.25"),
-    "p_hair_acc":    ("float", 0.25, "머리 악세서리(리본·핀 등) 생성 확률 [0.0~1.0]  기본 0.25"),
-    "p_breast":      ("float", 0.50, "가슴 크기 생성 확률 (gender=f 전용) [0.0~1.0]  기본 0.50"),
-    "p_expression":  ("float", 0.60, "얼굴 표정 생성 확률 [0.0~1.0]  기본 0.60"),
-    "p_dress":       ("float", 0.25, "드레스·교복·기모노 등 원피스 계열 확률 [0.0~1.0]  기본 0.25"),
-    "p_swimwear":    ("float", 0.05, "수영복 확률 (드레스 미선택 시) [0.0~1.0]  기본 0.05"),
-    "p_bodysuit":    ("float", 0.05, "바디수트·레오타드 확률 (드레스·수영복 미선택 시) [0.0~1.0]  기본 0.05"),
-    "p_top":         ("float", 0.75, "상의(셔츠·블라우스·후드 등) 생성 확률 [0.0~1.0]  기본 0.75"),
-    "p_bottom":      ("float", 0.60, "하의(스커트·반바지·바지 등) 생성 확률 [0.0~1.0]  기본 0.60"),
-    "p_outerwear":   ("float", 0.30, "아우터(재킷·코트·망토 등) 생성 확률 [0.0~1.0]  기본 0.30"),
-    "p_hosiery":     ("float", 0.50, "스타킹·양말 생성 확률 [0.0~1.0]  기본 0.50"),
-    "p_footwear":    ("float", 0.55, "신발·부츠 생성 확률 [0.0~1.0]  기본 0.55"),
-    "p_headwear":    ("float", 0.15, "모자·왕관 등 머리 장식 생성 확률 [0.0~1.0]  기본 0.15"),
-    "p_accessory":   ("float", 0.35, "장갑·초커·넥타이·앞치마 등 악세서리 생성 확률 [0.0~1.0]  기본 0.35"),
-    "gender":        ("str",   "f",  "성별 (f=여성 / m=남성)  기본 f"),
-    "only_face":     ("bool",  False, "얼굴·머리 태그만 생성 / 신체 제외 여부  기본 false"),
+    "p_hair_color": ("float", 0.70, "머리 색상 생성 확률 [0.0~1.0]  기본 0.70"),
+    "p_hair_multi": (
+        "float",
+        0.10,
+        "다색 머리(그라데이션·레인보우 등) 생성 확률 [0.0~1.0]  기본 0.10",
+    ),
+    "p_braid": (
+        "float",
+        0.50,
+        "묶음 스타일(포니테일·트윈테일 등) 생성 확률 [0.0~1.0]  기본 0.50",
+    ),
+    "p_hair_style": (
+        "float",
+        0.15,
+        "머리 텍스처(웨이브·곱슬 등) 생성 확률 [0.0~1.0]  기본 0.15",
+    ),
+    "p_bangs": ("float", 0.25, "앞머리 스타일 생성 확률 [0.0~1.0]  기본 0.25"),
+    "p_hair_acc": (
+        "float",
+        0.25,
+        "머리 악세서리(리본·핀 등) 생성 확률 [0.0~1.0]  기본 0.25",
+    ),
+    "p_breast": (
+        "float",
+        0.50,
+        "가슴 크기 생성 확률 (gender=f 전용) [0.0~1.0]  기본 0.50",
+    ),
+    "p_expression": ("float", 0.60, "얼굴 표정 생성 확률 [0.0~1.0]  기본 0.60"),
+    "p_dress": (
+        "float",
+        0.25,
+        "드레스·교복·기모노 등 원피스 계열 확률 [0.0~1.0]  기본 0.25",
+    ),
+    "p_swimwear": (
+        "float",
+        0.05,
+        "수영복 확률 (드레스 미선택 시) [0.0~1.0]  기본 0.05",
+    ),
+    "p_bodysuit": (
+        "float",
+        0.05,
+        "바디수트·레오타드 확률 (드레스·수영복 미선택 시) [0.0~1.0]  기본 0.05",
+    ),
+    "p_top": (
+        "float",
+        0.75,
+        "상의(셔츠·블라우스·후드 등) 생성 확률 [0.0~1.0]  기본 0.75",
+    ),
+    "p_bottom": (
+        "float",
+        0.60,
+        "하의(스커트·반바지·바지 등) 생성 확률 [0.0~1.0]  기본 0.60",
+    ),
+    "p_outerwear": (
+        "float",
+        0.30,
+        "아우터(재킷·코트·망토 등) 생성 확률 [0.0~1.0]  기본 0.30",
+    ),
+    "p_hosiery": ("float", 0.50, "스타킹·양말 생성 확률 [0.0~1.0]  기본 0.50"),
+    "p_footwear": ("float", 0.55, "신발·부츠 생성 확률 [0.0~1.0]  기본 0.55"),
+    "p_headwear": (
+        "float",
+        0.15,
+        "모자·왕관 등 머리 장식 생성 확률 [0.0~1.0]  기본 0.15",
+    ),
+    "p_accessory": (
+        "float",
+        0.35,
+        "장갑·초커·넥타이·앞치마 등 악세서리 생성 확률 [0.0~1.0]  기본 0.35",
+    ),
+    "gender": ("str", "f", "성별 (f=여성 / m=남성)  기본 f"),
+    "only_face": ("bool", False, "얼굴·머리 태그만 생성 / 신체 제외 여부  기본 false"),
 }
 
 
 def _parse_prompt_line(line: str) -> tuple[str, int]:
     """'텍스트 x N' → (텍스트, N). 숫자만 → ("", N). 그 외 → (텍스트, 1)."""
-    m = re.match(r'^(.*?)\s+[xX]\s+(\d+)\s*$', line)
+    m = re.match(r"^(.*?)\s+[xX]\s+(\d+)\s*$", line)
     if m:
         return m.group(1).strip(), max(1, int(m.group(2)))
-    if re.fullmatch(r'\d+', line.strip()):
+    if re.fullmatch(r"\d+", line.strip()):
         return "", max(1, int(line.strip()))
     return line.strip(), 1
 
@@ -169,11 +271,11 @@ def _strip_code_block(text: str) -> str:
         return text
     s = text.strip()
     # 트리플 백틱: ```[언어]\n내용\n``` 또는 ```내용```
-    m = re.fullmatch(r'```(?:[^\n]*\n)?([\s\S]*?)```', s)
+    m = re.fullmatch(r"```(?:[^\n]*\n)?([\s\S]*?)```", s)
     if m:
         return m.group(1).strip()
     # 단일 백틱: `내용`
-    m = re.fullmatch(r'`([^`]*)`', s)
+    m = re.fullmatch(r"`([^`]*)`", s)
     if m:
         return m.group(1).strip()
     return s
@@ -234,7 +336,6 @@ async def nai_value_autocomplete(
     ][:25]
 
 
-
 class NAIRegenerateView(ui.View):
     def __init__(self, cog: "NovelAICog", user_id: str):
         super().__init__(timeout=600)
@@ -284,7 +385,9 @@ class NAIRegenerateView(ui.View):
                 params=api_params,
             )
             if not images:
-                await interaction.followup.send("이미지를 생성하지 못했습니다.", ephemeral=True)
+                await interaction.followup.send(
+                    "이미지를 생성하지 못했습니다.", ephemeral=True
+                )
                 return
             files = [
                 discord.File(io.BytesIO(img), filename=f"result_{i}.png")
@@ -296,7 +399,11 @@ class NAIRegenerateView(ui.View):
         except Exception as e:
             logger.exception(
                 "nai 외형 재생성 오류 | user=%s prompt=%r model=%s action=%s params=%r",
-                self.user_id, used_prompt, used_model, used_action, api_params,
+                self.user_id,
+                used_prompt,
+                used_model,
+                used_action,
+                api_params,
             )
             await interaction.followup.send(
                 format_error(
@@ -348,7 +455,9 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         try:
             interval = max(
                 BATCH_MIN_INTERVAL,
-                min(BATCH_MAX_INTERVAL, float(self.interval_input.value.strip() or "5")),
+                min(
+                    BATCH_MAX_INTERVAL, float(self.interval_input.value.strip() or "5")
+                ),
             )
         except ValueError:
             await interaction.response.send_message(
@@ -357,12 +466,19 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
             )
             return
 
-        use_random = self.random_app_input.value.strip().lower() in ("y", "yes", "true", "1")
+        use_random = self.random_app_input.value.strip().lower() in (
+            "y",
+            "yes",
+            "true",
+            "1",
+        )
 
         raw_input = _strip_code_block(self.prompts_input.value)
         raw_lines = [l.strip() for l in raw_input.splitlines() if l.strip()]
         if not raw_lines:
-            await interaction.response.send_message("내용을 입력해주세요.", ephemeral=True)
+            await interaction.response.send_message(
+                "내용을 입력해주세요.", ephemeral=True
+            )
             return
 
         jobs: list[tuple[str, int]] = []
@@ -377,7 +493,8 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
 
         if not jobs:
             await interaction.response.send_message(
-                "유효한 프롬프트를 입력해주세요. (랜덤 외형 OFF 시 텍스트 필요)", ephemeral=True
+                "유효한 프롬프트를 입력해주세요. (랜덤 외형 OFF 시 텍스트 필요)",
+                ephemeral=True,
             )
             return
 
@@ -389,7 +506,9 @@ class NovelAICog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._image_params: dict[str, dict] = self._load_params()
-        self._nai_prefix_responses: dict[int, discord.Message] = {}  # user_msg_id -> bot_msg
+        self._nai_prefix_responses: dict[
+            int, discord.Message
+        ] = {}  # user_msg_id -> bot_msg
 
     @staticmethod
     def _load_params() -> dict:
@@ -412,7 +531,9 @@ class NovelAICog(commands.Cog):
 
     def _check_whitelist(self, interaction: discord.Interaction):
         if not whitelist_only(interaction):
-            raise app_commands.CheckFailure("이 명령어는 허가된 사용자만 사용할 수 있습니다.")
+            raise app_commands.CheckFailure(
+                "이 명령어는 허가된 사용자만 사용할 수 있습니다."
+            )
 
     async def _generate_nai_images(
         self, user_id: str, prompt_text: Optional[str]
@@ -422,7 +543,9 @@ class NovelAICog(commands.Cog):
         pre_positive = stored.get("_pre_positive", "")
         pre_negative = stored.get("_pre_negative", "")
 
-        post_positive = prompt_text if prompt_text is not None else stored.get("_last_prompt", "")
+        post_positive = (
+            prompt_text if prompt_text is not None else stored.get("_last_prompt", "")
+        )
         if not post_positive and not pre_positive:
             raise ValueError("프롬프트를 입력하거나 먼저 한 번 이상 사용해야 합니다.")
 
@@ -461,8 +584,14 @@ class NovelAICog(commands.Cog):
 
         async with ctx.typing():
             try:
-                images, post_positive, used_prompt, used_model, used_action, api_params = \
-                    await self._generate_nai_images(user_id, prompt_text)
+                (
+                    images,
+                    post_positive,
+                    used_prompt,
+                    used_model,
+                    used_action,
+                    api_params,
+                ) = await self._generate_nai_images(user_id, prompt_text)
                 if not images:
                     await ctx.reply("이미지를 생성하지 못했습니다.")
                     return
@@ -484,7 +613,11 @@ class NovelAICog(commands.Cog):
             except Exception as e:
                 logger.exception("!nai 오류 | user=%s prompt=%r", user_id, prompt_text)
                 await ctx.reply(
-                    format_error(e, user=f"{ctx.author} (ID: {user_id})", prompt=str(prompt_text or ""))
+                    format_error(
+                        e,
+                        user=f"{ctx.author} (ID: {user_id})",
+                        prompt=str(prompt_text or ""),
+                    )
                 )
 
     @commands.Cog.listener()
@@ -508,7 +641,7 @@ class NovelAICog(commands.Cog):
         for p in prefixes:
             cmd_str = p + "nai"
             if content.lower().startswith(cmd_str.lower()):
-                remainder = content[len(cmd_str):].strip()
+                remainder = content[len(cmd_str) :].strip()
                 new_prompt_raw = remainder if remainder else None
                 matched = True
                 break
@@ -526,8 +659,14 @@ class NovelAICog(commands.Cog):
             return
 
         try:
-            images, post_positive, used_prompt, used_model, used_action, api_params = \
-                await self._generate_nai_images(user_id, prompt_text)
+            (
+                images,
+                post_positive,
+                used_prompt,
+                used_model,
+                used_action,
+                api_params,
+            ) = await self._generate_nai_images(user_id, prompt_text)
         except ValueError as e:
             await bot_msg.edit(content=str(e))
             return
@@ -559,24 +698,39 @@ class NovelAICog(commands.Cog):
         action="동작 종류 (생략 시 마지막 사용값 재사용)",
         ignore_pre="nai_pre 선행 프롬프트를 무시할 대상 (positive / negative / both)",
     )
-    @app_commands.choices(ignore_pre=[
-        app_commands.Choice(name="positive (선행 포지티브 무시)", value="positive"),
-        app_commands.Choice(name="negative (선행 네거티브 무시)", value="negative"),
-        app_commands.Choice(name="both (선행 포지티브·네거티브 모두 무시)", value="both"),
-    ])
-    @app_commands.choices(model=[
-        app_commands.Choice(name="nai-diffusion-4-5-full", value="nai-diffusion-4-5-full"),
-        app_commands.Choice(name="nai-diffusion-4-5", value="nai-diffusion-4-5"),
-        app_commands.Choice(name="nai-diffusion-4-5-curated", value="nai-diffusion-4-5-curated"),
-        app_commands.Choice(name="nai-diffusion-4", value="nai-diffusion-4"),
-        app_commands.Choice(name="nai-diffusion-4-curated-preview", value="nai-diffusion-4-curated-preview"),
-        app_commands.Choice(name="nai-diffusion-3", value="nai-diffusion-3"),
-    ])
-    @app_commands.choices(action=[
-        app_commands.Choice(name="generate", value="generate"),
-        app_commands.Choice(name="img2img", value="img2img"),
-        app_commands.Choice(name="infill", value="infill"),
-    ])
+    @app_commands.choices(
+        ignore_pre=[
+            app_commands.Choice(name="positive (선행 포지티브 무시)", value="positive"),
+            app_commands.Choice(name="negative (선행 네거티브 무시)", value="negative"),
+            app_commands.Choice(
+                name="both (선행 포지티브·네거티브 모두 무시)", value="both"
+            ),
+        ]
+    )
+    @app_commands.choices(
+        model=[
+            app_commands.Choice(
+                name="nai-diffusion-4-5-full", value="nai-diffusion-4-5-full"
+            ),
+            app_commands.Choice(name="nai-diffusion-4-5", value="nai-diffusion-4-5"),
+            app_commands.Choice(
+                name="nai-diffusion-4-5-curated", value="nai-diffusion-4-5-curated"
+            ),
+            app_commands.Choice(name="nai-diffusion-4", value="nai-diffusion-4"),
+            app_commands.Choice(
+                name="nai-diffusion-4-curated-preview",
+                value="nai-diffusion-4-curated-preview",
+            ),
+            app_commands.Choice(name="nai-diffusion-3", value="nai-diffusion-3"),
+        ]
+    )
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="generate", value="generate"),
+            app_commands.Choice(name="img2img", value="img2img"),
+            app_commands.Choice(name="infill", value="infill"),
+        ]
+    )
     async def nai(
         self,
         interaction: discord.Interaction,
@@ -591,10 +745,22 @@ class NovelAICog(commands.Cog):
         user_id = str(interaction.user.id)
         stored = self._get_image_params(user_id)
 
-        pre_positive = "" if ignore_pre in ("positive", "both") else stored.get("_pre_positive", "")
-        pre_negative = "" if ignore_pre in ("negative", "both") else stored.get("_pre_negative", "")
+        pre_positive = (
+            ""
+            if ignore_pre in ("positive", "both")
+            else stored.get("_pre_positive", "")
+        )
+        pre_negative = (
+            ""
+            if ignore_pre in ("negative", "both")
+            else stored.get("_pre_negative", "")
+        )
 
-        post_positive = _strip_code_block(prompt) if prompt is not None else stored.get("_last_prompt", "")
+        post_positive = (
+            _strip_code_block(prompt)
+            if prompt is not None
+            else stored.get("_last_prompt", "")
+        )
 
         if not post_positive and not pre_positive:
             await interaction.followup.send(
@@ -639,12 +805,18 @@ class NovelAICog(commands.Cog):
             ]
             view = NAIRegenerateView(self, user_id)
             content = f"`{post_positive}`" if post_positive else None
-            message = await interaction.followup.send(content=content, files=files, view=view, wait=True)
+            message = await interaction.followup.send(
+                content=content, files=files, view=view, wait=True
+            )
             view.message = message
         except Exception as e:
             logger.exception(
                 "nai 오류 | user=%s prompt=%r model=%s action=%s params=%r",
-                user_id, used_prompt, used_model, used_action, api_params,
+                user_id,
+                used_prompt,
+                used_model,
+                used_action,
+                api_params,
             )
             await interaction.followup.send(
                 format_error(
@@ -660,12 +832,17 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_preset", description="이미지 생성 세팅을 프리셋으로 한번에 적용합니다.")
+    @app_commands.command(
+        name="nai_preset",
+        description="이미지 생성 세팅을 프리셋으로 한번에 적용합니다.",
+    )
     @app_commands.describe(preset="적용할 프리셋")
-    @app_commands.choices(preset=[
-        app_commands.Choice(name="landscape (1216×832)", value="landscape"),
-        app_commands.Choice(name="portrait (832×1216)", value="portrait"),
-    ])
+    @app_commands.choices(
+        preset=[
+            app_commands.Choice(name="landscape (1216×832)", value="landscape"),
+            app_commands.Choice(name="portrait (832×1216)", value="portrait"),
+        ]
+    )
     async def nai_preset(self, interaction: discord.Interaction, preset: str):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -686,7 +863,9 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_set", description="이미지 파라미터를 설정·조회·초기화합니다.")
+    @app_commands.command(
+        name="nai_set", description="이미지 파라미터를 설정·조회·초기화합니다."
+    )
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
         value="설정할 값 (생략 시 현재 값 조회, 'clear'로 해당 파라미터 제거)",
@@ -705,7 +884,9 @@ class NovelAICog(commands.Cog):
         if key is None:
             display = {k: v for k, v in stored.items() if k not in _INTERNAL_KEYS}
             if not display:
-                await interaction.response.send_message("설정된 파라미터가 없습니다.", ephemeral=True)
+                await interaction.response.send_message(
+                    "설정된 파라미터가 없습니다.", ephemeral=True
+                )
                 return
             lines = [f"**{k}:** `{v}`" for k, v in display.items()]
             await send_long(interaction, "\n".join(lines), ephemeral=True)
@@ -714,13 +895,16 @@ class NovelAICog(commands.Cog):
         if key == "clear":
             self._image_params.pop(user_id, None)
             self._save_params()
-            await interaction.response.send_message("이미지 파라미터가 초기화되었습니다.", ephemeral=True)
+            await interaction.response.send_message(
+                "이미지 파라미터가 초기화되었습니다.", ephemeral=True
+            )
             return
 
         if key not in IMAGE_PARAM_TYPES:
             valid = ", ".join(f"`{k}`" for k in IMAGE_PARAM_KEYS)
             await interaction.response.send_message(
-                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}", ephemeral=True
+                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}",
+                ephemeral=True,
             )
             return
 
@@ -741,7 +925,9 @@ class NovelAICog(commands.Cog):
         if value == "clear":
             stored.pop(key, None)
             self._save_params()
-            await interaction.response.send_message(f"파라미터 `{key}`가 제거되었습니다.", ephemeral=True)
+            await interaction.response.send_message(
+                f"파라미터 `{key}`가 제거되었습니다.", ephemeral=True
+            )
             return
 
         type_name = IMAGE_PARAM_TYPES[key]
@@ -775,16 +961,21 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_pre", description="선행 프롬프트(그림체 프리셋)를 설정·확인·초기화합니다.")
+    @app_commands.command(
+        name="nai_pre",
+        description="선행 프롬프트(그림체 프리셋)를 설정·확인·초기화합니다.",
+    )
     @app_commands.describe(
         positive="선행 포지티브 프롬프트 (생략 시 유지)",
         negative="선행 네거티브 프롬프트 (생략 시 유지)",
         action="show=확인 / clear=초기화 (positive/negative 입력 시 자동으로 설정)",
     )
-    @app_commands.choices(action=[
-        app_commands.Choice(name="show (현재 확인)", value="show"),
-        app_commands.Choice(name="clear (초기화)", value="clear"),
-    ])
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="show (현재 확인)", value="show"),
+            app_commands.Choice(name="clear (초기화)", value="clear"),
+        ]
+    )
     async def nai_pre(
         self,
         interaction: discord.Interaction,
@@ -800,7 +991,9 @@ class NovelAICog(commands.Cog):
             stored.pop("_pre_positive", None)
             stored.pop("_pre_negative", None)
             self._save_params()
-            await interaction.response.send_message("선행 프롬프트가 초기화되었습니다.", ephemeral=True)
+            await interaction.response.send_message(
+                "선행 프롬프트가 초기화되었습니다.", ephemeral=True
+            )
             return
 
         if action == "show" or (positive is None and negative is None):
@@ -829,7 +1022,9 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="random", description="랜덤 외형 태그를 생성해 후행 프롬프트에 주입합니다.")
+    @app_commands.command(
+        name="random", description="랜덤 외형 태그를 생성해 후행 프롬프트에 주입합니다."
+    )
     async def random_appearance(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -845,7 +1040,9 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_prompt", description="현재 저장된 프롬프트를 열람합니다.")
+    @app_commands.command(
+        name="nai_prompt", description="현재 저장된 프롬프트를 열람합니다."
+    )
     async def nai_prompt(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -865,17 +1062,22 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_del", description="선행·후행 프롬프트에서 태그를 삭제합니다. 태그 미입력 시 전체 삭제.")
+    @app_commands.command(
+        name="nai_del",
+        description="선행·후행 프롬프트에서 태그를 삭제합니다. 태그 미입력 시 전체 삭제.",
+    )
     @app_commands.describe(
         target="삭제할 프롬프트 대상",
         tag="삭제할 태그 (부분 일치, 생략 시 전체 삭제)",
     )
-    @app_commands.choices(target=[
-        app_commands.Choice(name="선행 포지티브", value="pre_positive"),
-        app_commands.Choice(name="선행 네거티브", value="pre_negative"),
-        app_commands.Choice(name="후행 포지티브", value="post_positive"),
-        app_commands.Choice(name="후행 네거티브", value="post_negative"),
-    ])
+    @app_commands.choices(
+        target=[
+            app_commands.Choice(name="선행 포지티브", value="pre_positive"),
+            app_commands.Choice(name="선행 네거티브", value="pre_negative"),
+            app_commands.Choice(name="후행 포지티브", value="post_positive"),
+            app_commands.Choice(name="후행 네거티브", value="post_negative"),
+        ]
+    )
     async def nai_del(
         self,
         interaction: discord.Interaction,
@@ -923,7 +1125,8 @@ class NovelAICog(commands.Cog):
         )
         if matched is None:
             await interaction.response.send_message(
-                f"`{tag_stripped}` 태그를 **{label_map[target]}**에서 찾을 수 없습니다.", ephemeral=True
+                f"`{tag_stripped}` 태그를 **{label_map[target]}**에서 찾을 수 없습니다.",
+                ephemeral=True,
             )
             return
 
@@ -959,7 +1162,9 @@ class NovelAICog(commands.Cog):
             f"  |  간격 {interval:.0f}초"
             f"  |  랜덤 외형 {'ON' if use_random else 'OFF'}"
         )
-        progress_msg = await interaction.followup.send(f"⏳ {header}\n진행: 0 / {total}")
+        progress_msg = await interaction.followup.send(
+            f"⏳ {header}\n진행: 0 / {total}"
+        )
 
         completed = 0
         errors = 0
@@ -1000,15 +1205,21 @@ class NovelAICog(commands.Cog):
                 prefix = f"**[{completed}/{total}]** "
                 msg_content = prefix + label
                 if len(msg_content) > 2000:
-                    msg_content = prefix + f"`{trailing[:2000 - len(prefix) - 4]}...`"
+                    msg_content = prefix + f"`{trailing[: 2000 - len(prefix) - 4]}...`"
                 await interaction.followup.send(content=msg_content, files=files)
             except Exception as e:
                 errors += 1
-                logger.exception("nai 배치 오류 | user=%s trailing=%r", user_id, trailing)
+                logger.exception(
+                    "nai 배치 오류 | user=%s trailing=%r", user_id, trailing
+                )
                 err_prefix = f"**[{completed}/{total}]** "
                 err_content = err_prefix + label + f" — 오류: `{e}`"
                 if len(err_content) > 2000:
-                    err_content = err_prefix + f"`{trailing[:2000 - len(err_prefix) - 4]}...`" + f" — 오류: `{e}`"
+                    err_content = (
+                        err_prefix
+                        + f"`{trailing[: 2000 - len(err_prefix) - 4]}...`"
+                        + f" — 오류: `{e}`"
+                    )
                 await interaction.followup.send(content=err_content)
 
             await progress_msg.edit(content=f"⏳ {header}\n진행: {completed} / {total}")
@@ -1021,7 +1232,10 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_batch", description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)")
+    @app_commands.command(
+        name="nai_batch",
+        description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)",
+    )
     async def nai_batch(self, interaction: discord.Interaction):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -1029,7 +1243,9 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_batch_file", description="텍스트 파일로 NAI 배치 이미지 생성")
+    @app_commands.command(
+        name="nai_batch_file", description="텍스트 파일로 NAI 배치 이미지 생성"
+    )
     @app_commands.describe(
         file="프롬프트 목록 텍스트 파일 (.txt, 한 줄에 '텍스트 x N' 형식)",
         interval="호출 간격 (초, 3~60, 기본 5)",
@@ -1046,10 +1262,14 @@ class NovelAICog(commands.Cog):
         user_id = str(interaction.user.id)
 
         if file.size > 100_000:
-            await interaction.response.send_message("파일 크기는 100KB 이하여야 합니다.", ephemeral=True)
+            await interaction.response.send_message(
+                "파일 크기는 100KB 이하여야 합니다.", ephemeral=True
+            )
             return
 
-        clamped_interval = max(BATCH_MIN_INTERVAL, min(BATCH_MAX_INTERVAL, interval or 5.0))
+        clamped_interval = max(
+            BATCH_MIN_INTERVAL, min(BATCH_MAX_INTERVAL, interval or 5.0)
+        )
         use_random = (random_app or "n").strip().lower() in ("y", "yes", "true", "1")
 
         await interaction.response.defer(thinking=True)
@@ -1064,7 +1284,9 @@ class NovelAICog(commands.Cog):
         raw_input = _strip_code_block(raw_input)
         raw_lines = [l.strip() for l in raw_input.splitlines() if l.strip()]
         if not raw_lines:
-            await interaction.followup.send("파일에 유효한 내용이 없습니다.", ephemeral=True)
+            await interaction.followup.send(
+                "파일에 유효한 내용이 없습니다.", ephemeral=True
+            )
             return
 
         jobs: list[tuple[str, int]] = []
@@ -1079,7 +1301,8 @@ class NovelAICog(commands.Cog):
 
         if not jobs:
             await interaction.followup.send(
-                "유효한 프롬프트가 없습니다. (랜덤 외형 OFF 시 텍스트 필요)", ephemeral=True
+                "유효한 프롬프트가 없습니다. (랜덤 외형 OFF 시 텍스트 필요)",
+                ephemeral=True,
             )
             return
 
@@ -1087,12 +1310,16 @@ class NovelAICog(commands.Cog):
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="random_set", description="랜덤 외형 생성 가중치를 설정·조회·초기화합니다.")
+    @app_commands.command(
+        name="random_set", description="랜덤 외형 생성 가중치를 설정·조회·초기화합니다."
+    )
     @app_commands.describe(
         key="파라미터 이름 (생략 시 전체 보기, 'clear'로 전체 초기화)",
         value="설정할 값 (생략 시 현재 값과 설명 표시, 'clear'로 기본값으로 리셋)",
     )
-    @app_commands.autocomplete(key=random_key_autocomplete, value=random_value_autocomplete)
+    @app_commands.autocomplete(
+        key=random_key_autocomplete, value=random_value_autocomplete
+    )
     async def random_set(
         self,
         interaction: discord.Interaction,
@@ -1115,13 +1342,16 @@ class NovelAICog(commands.Cog):
         if key == "clear":
             stored.pop("_random_config", None)
             self._save_params()
-            await interaction.response.send_message("랜덤 가중치가 기본값으로 초기화되었습니다.", ephemeral=True)
+            await interaction.response.send_message(
+                "랜덤 가중치가 기본값으로 초기화되었습니다.", ephemeral=True
+            )
             return
 
         if key not in RANDOM_WEIGHT_KEYS:
             valid = ", ".join(f"`{k}`" for k in RANDOM_WEIGHT_KEYS)
             await interaction.response.send_message(
-                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}", ephemeral=True
+                f"알 수 없는 파라미터: `{key}`\n유효한 파라미터: {valid}",
+                ephemeral=True,
             )
             return
 
@@ -1172,10 +1402,11 @@ class NovelAICog(commands.Cog):
         self._save_params()
         await interaction.response.send_message(f"`{key}` = `{parsed}`", ephemeral=True)
 
-
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.command(name="nai_zip", description="채널의 최근 n개 이미지를 zip으로 묶어 보냅니다.")
+    @app_commands.command(
+        name="nai_zip", description="채널의 최근 n개 이미지를 zip으로 묶어 보냅니다."
+    )
     @app_commands.describe(n="가져올 이미지 개수 (기본 10, 최대 100)")
     async def nai_zip(self, interaction: discord.Interaction, n: Optional[int] = 10):
         self._check_whitelist(interaction)
@@ -1183,8 +1414,12 @@ class NovelAICog(commands.Cog):
         await interaction.response.defer(thinking=True)
 
         channel = interaction.channel
-        if not isinstance(channel, (discord.TextChannel, discord.Thread, discord.DMChannel)):
-            await interaction.followup.send("이 채널에서는 메세지 히스토리를 조회할 수 없습니다.", ephemeral=True)
+        if not isinstance(
+            channel, (discord.TextChannel, discord.Thread, discord.DMChannel)
+        ):
+            await interaction.followup.send(
+                "이 채널에서는 메세지 히스토리를 조회할 수 없습니다.", ephemeral=True
+            )
             return
 
         collected: list[tuple[str, str]] = []  # (url, filename)
@@ -1198,7 +1433,9 @@ class NovelAICog(commands.Cog):
                 break
 
         if not collected:
-            await interaction.followup.send("최근 메세지에서 PNG 이미지를 찾을 수 없습니다.", ephemeral=True)
+            await interaction.followup.send(
+                "최근 메세지에서 PNG 이미지를 찾을 수 없습니다.", ephemeral=True
+            )
             return
 
         buf = io.BytesIO()
