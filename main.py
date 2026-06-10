@@ -19,6 +19,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 COGS = [
     "bot.cogs.chat_cog",
     "bot.cogs.novelai_cog",
+    "bot.cogs.precise_ref_cog",
     "bot.cogs.admin_cog",
     "bot.cogs.logging_cog",
 ]
