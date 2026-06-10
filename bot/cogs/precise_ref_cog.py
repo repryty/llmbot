@@ -12,18 +12,16 @@ from bot.core.config import settings
 from bot.core.novelai_client import novelai_client
 from bot.core.error_utils import format_error, send_long
 from bot.core.nai_image_utils import crop_and_resize, image_to_base64
+from bot.core.precise_ref_store import (
+    PRECISE_REFS_PATH,
+    _V4_5_MODELS,
+    build_director_params as _build_director_params,
+    load_user_refs,
+)
 
 logger = logging.getLogger(__name__)
 
-PRECISE_REFS_PATH = Path("data/precise_refs.json")
 MAX_REFS = 3  # NAI API 최대 허용 레퍼런스 수
-
-# Precise Reference는 V4.5 전용
-_V4_5_MODELS = {
-    "nai-diffusion-4-5",
-    "nai-diffusion-4-5-curated",
-    "nai-diffusion-4-5-full",
-}
 
 _INTERNAL_KEYS = {
     "_last_prompt",
@@ -34,30 +32,6 @@ _INTERNAL_KEYS = {
     "_random_appearance",
     "_random_config",
 }
-
-
-def _build_director_params(refs: list[dict]) -> dict:
-    """저장된 레퍼런스 목록에서 NAI API director_reference_* 파라미터를 생성한다."""
-    return {
-        "director_reference_images": [r["image_b64"] for r in refs],
-        "director_reference_descriptions": [
-            {
-                "caption": {
-                    "base_caption": r["type"],
-                    "char_captions": [],
-                },
-                "legacy_uc": False,
-            }
-            for r in refs
-        ],
-        "director_reference_strength_values": [
-            round(r.get("strength", 1.0), 2) for r in refs
-        ],
-        "director_reference_secondary_strength_values": [
-            round(1.0 - r.get("fidelity", 1.0), 2) for r in refs
-        ],
-        "director_reference_information_extracted": [1.0] * len(refs),
-    }
 
 
 class PreciseRefCog(commands.Cog):

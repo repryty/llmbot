@@ -15,6 +15,7 @@ from bot.core.config import settings
 from bot.core.novelai_client import novelai_client
 from bot.core.error_utils import format_error, send_long
 from bot.core.appearance_gen import generate_appearance, WEIGHT_DEFAULTS
+from bot.core.precise_ref_store import get_precise_ref_params
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +375,7 @@ class NAIRegenerateView(ui.View):
             api_params["negative_prompt"] = combined_negative
         else:
             api_params.pop("negative_prompt", None)
+        api_params.update(get_precise_ref_params(self.user_id, used_model))
 
         target = interaction.message
 
@@ -446,10 +448,11 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
         default="n",
     )
 
-    def __init__(self, cog: "NovelAICog", user_id: str):
+    def __init__(self, cog: "NovelAICog", user_id: str, ignore_precise: bool = False):
         super().__init__()
         self.cog = cog
         self.user_id = user_id
+        self.ignore_precise = ignore_precise
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -499,7 +502,7 @@ class NAIBatchModal(ui.Modal, title="NAI 배치 생성"):
             return
 
         await interaction.response.defer(thinking=True)
-        await self.cog._run_batch(interaction, self.user_id, jobs, interval, use_random)
+        await self.cog._run_batch(interaction, self.user_id, jobs, interval, use_random, self.ignore_precise)
 
 
 class NovelAICog(commands.Cog):
@@ -536,7 +539,7 @@ class NovelAICog(commands.Cog):
             )
 
     async def _generate_nai_images(
-        self, user_id: str, prompt_text: Optional[str]
+        self, user_id: str, prompt_text: Optional[str], ignore_precise: bool = False
     ) -> tuple[list[bytes], str, str, str, dict]:
         """공통 NAI 이미지 생성 로직. (images, post_positive, used_prompt, model, action, api_params) 반환."""
         stored = self._get_image_params(user_id)
@@ -565,6 +568,8 @@ class NovelAICog(commands.Cog):
         stored["_last_action"] = used_action
         stored["model"] = used_model
         self._save_params()
+
+        api_params.update(get_precise_ref_params(user_id, used_model, ignore_precise))
 
         images = await novelai_client.generate_image(
             input_text=used_prompt,
@@ -697,6 +702,7 @@ class NovelAICog(commands.Cog):
         model="모델 (생략 시 마지막 사용값 재사용)",
         action="동작 종류 (생략 시 마지막 사용값 재사용)",
         ignore_pre="nai_pre 선행 프롬프트를 무시할 대상 (positive / negative / both)",
+        ignore_precise="True: 이번 생성에서 Precise Reference 무시",
     )
     @app_commands.choices(
         ignore_pre=[
@@ -739,6 +745,7 @@ class NovelAICog(commands.Cog):
         model: Optional[str] = None,
         action: Optional[str] = None,
         ignore_pre: Optional[str] = None,
+        ignore_precise: Optional[bool] = None,
     ):
         self._check_whitelist(interaction)
         await interaction.response.defer(thinking=True)
@@ -788,6 +795,8 @@ class NovelAICog(commands.Cog):
         stored["_last_action"] = used_action
         stored["model"] = used_model
         self._save_params()
+
+        api_params.update(get_precise_ref_params(user_id, used_model, ignore_precise or False))
 
         try:
             images = await novelai_client.generate_image(
@@ -1149,6 +1158,7 @@ class NovelAICog(commands.Cog):
         jobs: list[tuple[str, int]],
         interval: float,
         use_random: bool,
+        ignore_precise: bool = False,
     ):
         total = sum(c for _, c in jobs)
         stored = self._get_image_params(user_id)
@@ -1188,6 +1198,7 @@ class NovelAICog(commands.Cog):
                 api_params["negative_prompt"] = combined_negative
             else:
                 api_params.pop("negative_prompt", None)
+            api_params.update(get_precise_ref_params(user_id, used_model, ignore_precise))
 
             label = f"`{trailing}`" if trailing else "(없음)"
             completed += 1
@@ -1237,10 +1248,11 @@ class NovelAICog(commands.Cog):
         name="nai_batch",
         description="NAI 배치 이미지 생성 (여러 프롬프트를 순차적으로 생성)",
     )
-    async def nai_batch(self, interaction: discord.Interaction):
+    @app_commands.describe(ignore_precise="True: 이번 배치에서 Precise Reference 무시")
+    async def nai_batch(self, interaction: discord.Interaction, ignore_precise: Optional[bool] = None):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
-        await interaction.response.send_modal(NAIBatchModal(self, user_id))
+        await interaction.response.send_modal(NAIBatchModal(self, user_id, ignore_precise or False))
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -1251,6 +1263,7 @@ class NovelAICog(commands.Cog):
         file="프롬프트 목록 텍스트 파일 (.txt, 한 줄에 '텍스트 x N' 형식)",
         interval="호출 간격 (초, 3~60, 기본 5)",
         random_app="랜덤 외형 매번 재생성 (y/n, 기본 n)",
+        ignore_precise="True: 이번 배치에서 Precise Reference 무시",
     )
     async def nai_batch_file(
         self,
@@ -1258,6 +1271,7 @@ class NovelAICog(commands.Cog):
         file: discord.Attachment,
         interval: Optional[float] = 5.0,
         random_app: Optional[str] = "n",
+        ignore_precise: Optional[bool] = None,
     ):
         self._check_whitelist(interaction)
         user_id = str(interaction.user.id)
@@ -1307,7 +1321,7 @@ class NovelAICog(commands.Cog):
             )
             return
 
-        await self._run_batch(interaction, user_id, jobs, clamped_interval, use_random)
+        await self._run_batch(interaction, user_id, jobs, clamped_interval, use_random, ignore_precise or False)
 
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
